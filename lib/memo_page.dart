@@ -11,7 +11,9 @@ class MemoPage extends StatefulWidget {
 class _MemoPageState extends State<MemoPage> {
   late final TextEditingController _controller;
   List<String> _lines = [];
+  List<String> _paragraphs = [];
   final Map<int, TextEditingController> _lineCtrls = {};
+  final Map<int, TextEditingController> _paraCtrls = {};
 
   // Flag to prevent recursive updates between whole-text and per-line edits
   bool _suppressTextListener = false;
@@ -25,13 +27,15 @@ class _MemoPageState extends State<MemoPage> {
 
   void _onTextChanged() {
     if (_suppressTextListener) return;
-    _refreshLines();
+    _refreshViews();
   }
 
-  void _refreshLines() {
+  void _refreshViews() {
     setState(() {
       _lines = _controller.text.split('\n');
+      _paragraphs = _controller.text.split(RegExp(r'\n{2,}'));
       _syncLineControllers();
+      _syncParagraphControllers();
     });
   }
 
@@ -56,20 +60,43 @@ class _MemoPageState extends State<MemoPage> {
     });
   }
 
-  void _onLineChanged(int index) {
-    if (index >= _lines.length) return;
-    _lines[index] = _lineCtrls[index]!.text;
-    _updateWholeText();
+  void _syncParagraphControllers() {
+    for (var i = 0; i < _paragraphs.length; i++) {
+      final text = _paragraphs[i];
+      if (!_paraCtrls.containsKey(i)) {
+        _paraCtrls[i] = TextEditingController(text: text);
+        _paraCtrls[i]!.addListener(() => _onParagraphChanged(i));
+      } else {
+        final ctrl = _paraCtrls[i]!;
+        if (ctrl.text != text) ctrl.text = text;
+      }
+    }
+    _paraCtrls.keys.where((k) => k >= _paragraphs.length).toList().forEach((k) {
+      _paraCtrls[k]!.dispose();
+      _paraCtrls.remove(k);
+    });
   }
 
-  void _updateWholeText() {
+  void _onParagraphChanged(int index) {
+    if (index >= _paragraphs.length) return;
+    _paragraphs[index] = _paraCtrls[index]!.text;
+    _setWholeText(_paragraphs.join('\n\n'));
+  }
+
+  void _setWholeText(String text) {
     _suppressTextListener = true;
-    _controller.text = _lines.join('\n');
-    // keep cursor at end for simplicity
+    _controller.text = text;
     _controller.selection = TextSelection.collapsed(
       offset: _controller.text.length,
     );
     _suppressTextListener = false;
+    _refreshViews();
+  }
+
+  void _onLineChanged(int index) {
+    if (index >= _lines.length) return;
+    _lines[index] = _lineCtrls[index]!.text;
+    _setWholeText(_lines.join('\n'));
   }
 
   @override
@@ -81,7 +108,7 @@ class _MemoPageState extends State<MemoPage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Memo'),
@@ -89,12 +116,13 @@ class _MemoPageState extends State<MemoPage> {
             tabs: [
               Tab(icon: Icon(Icons.notes), text: 'All'),
               Tab(icon: Icon(Icons.list), text: 'Lines'),
+              Tab(icon: Icon(Icons.article), text: 'Paragraph'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
-            // --- Edit Tab ---
+            // --- All Tab ---
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: TextField(
@@ -110,10 +138,20 @@ class _MemoPageState extends State<MemoPage> {
               ),
             ),
             // --- Lines Tab ---
-            ListView.builder(
+            ReorderableListView.builder(
+              buildDefaultDragHandles: false,
               itemCount: _lines.length,
+              onReorder: (oldIndex, newIndex) {
+                setState(() {
+                  if (newIndex > oldIndex) newIndex -= 1;
+                  final line = _lines.removeAt(oldIndex);
+                  _lines.insert(newIndex, line);
+                  _setWholeText(_lines.join('\n'));
+                });
+              },
               itemBuilder: (context, index) {
                 return Padding(
+                  key: ValueKey('line_$index'),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 8,
                     vertical: 4,
@@ -148,10 +186,67 @@ class _MemoPageState extends State<MemoPage> {
                         tooltip: 'Cut',
                         onPressed: () => _cutLine(index),
                       ),
+                      ReorderableDragStartListener(
+                        index: index,
+                        child: const Icon(Icons.drag_handle),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+
+            // --- Paragraph Tab ---
+            ReorderableListView.builder(
+              buildDefaultDragHandles: false,
+              itemCount: _paragraphs.length,
+              onReorder: (oldIndex, newIndex) {
+                setState(() {
+                  if (newIndex > oldIndex) newIndex -= 1;
+                  final p = _paragraphs.removeAt(oldIndex);
+                  _paragraphs.insert(newIndex, p);
+                  _setWholeText(_paragraphs.join('\n\n'));
+                });
+              },
+              itemBuilder: (context, index) {
+                return Padding(
+                  key: ValueKey('para_$index'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _paraCtrls[index],
+                          minLines: 2,
+                          maxLines: null,
+                          keyboardType: TextInputType.multiline,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                          ),
+                        ),
+                      ),
                       IconButton(
-                        icon: const Icon(Icons.content_paste),
-                        tooltip: 'Paste',
-                        onPressed: () => _pasteAfter(index),
+                        icon: const Icon(Icons.content_copy),
+                        tooltip: 'Copy',
+                        onPressed: () => _copyParagraph(index),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.content_cut),
+                        tooltip: 'Cut',
+                        onPressed: () => _cutParagraph(index),
+                      ),
+                      ReorderableDragStartListener(
+                        index: index,
+                        child: const Icon(Icons.drag_handle),
                       ),
                     ],
                   ),
@@ -173,22 +268,30 @@ class _MemoPageState extends State<MemoPage> {
     ).showSnackBar(const SnackBar(content: Text('Line copied')));
   }
 
+  Future<void> _copyParagraph(int index) async {
+    final text = _paragraphs[index];
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Paragraph copied')));
+  }
+
   Future<void> _cutLine(int index) async {
     await _copyLine(index);
     setState(() {
       _lines.removeAt(index);
-      _updateWholeText();
-      _syncLineControllers();
+      _setWholeText(_lines.join('\n'));
     });
   }
 
-  Future<void> _pasteAfter(int index) async {
-    final data = await Clipboard.getData('text/plain');
-    if (data?.text == null || data!.text!.isEmpty) return;
+  Future<void> _cutParagraph(int index) async {
+    await _copyParagraph(index);
     setState(() {
-      _lines.insert(index + 1, data.text!);
-      _updateWholeText();
-      _syncLineControllers();
+      _paragraphs.removeAt(index);
+      _setWholeText(_paragraphs.join('\n\n'));
     });
   }
+
+  // _pasteAfter removed due to design change
 }
