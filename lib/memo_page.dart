@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:io';
+import 'dart:async';
+// path_provider import removed; handled by caller
+import 'package:provider/provider.dart';
+import 'memo_store.dart';
 
 class MemoPage extends StatefulWidget {
-  const MemoPage({super.key});
+  final String filePath;
+  const MemoPage({super.key, required this.filePath});
 
   @override
   State<MemoPage> createState() => _MemoPageState();
@@ -15,6 +21,10 @@ class _MemoPageState extends State<MemoPage> {
   final Map<int, TextEditingController> _lineCtrls = {};
   final Map<int, TextEditingController> _paraCtrls = {};
 
+  // storage
+  late File _memoFile;
+  Timer? _saveTimer;
+
   // Flag to prevent recursive updates between whole-text and per-line edits
   bool _suppressTextListener = false;
 
@@ -23,6 +33,18 @@ class _MemoPageState extends State<MemoPage> {
     super.initState();
     _controller = TextEditingController();
     _controller.addListener(_onTextChanged);
+
+    _initStorage();
+  }
+
+  Future<void> _initStorage() async {
+    _memoFile = File(widget.filePath);
+    if (await _memoFile.exists()) {
+      final text = await _memoFile.readAsString();
+      if (text.isNotEmpty) {
+        _setWholeText(text);
+      }
+    }
   }
 
   void _onTextChanged() {
@@ -91,6 +113,18 @@ class _MemoPageState extends State<MemoPage> {
     );
     _suppressTextListener = false;
     _refreshViews();
+
+    _scheduleSave();
+  }
+
+  void _scheduleSave() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 500), _saveToFile);
+  }
+
+  void _saveToFile() {
+    final store = context.read<MemoStore>();
+    store.writeMemo(widget.filePath, _controller.text);
   }
 
   void _onLineChanged(int index) {
@@ -102,6 +136,7 @@ class _MemoPageState extends State<MemoPage> {
   @override
   void dispose() {
     _controller.dispose();
+    _saveTimer?.cancel();
     super.dispose();
   }
 
