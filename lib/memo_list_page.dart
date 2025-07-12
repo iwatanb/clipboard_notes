@@ -58,10 +58,50 @@ class _MemoListPageState extends State<MemoListPage> {
             RegExp(r'\.txt$'),
             '',
           );
-          return ListTile(
-            title: Text(preview),
-            subtitle: Text(baseName),
-            onTap: () => _openMemo(file.path),
+          return Dismissible(
+            key: ValueKey(file.path),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              color: Colors.red,
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: const Icon(Icons.delete, color: Colors.white),
+            ),
+            confirmDismiss: (_) async {
+              return await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Delete Memo'),
+                      content: const Text(
+                        'Are you sure you want to delete this memo?',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          child: const Text('Delete'),
+                        ),
+                      ],
+                    ),
+                  ) ??
+                  false;
+            },
+            onDismissed: (_) async {
+              await context.read<MemoStore>().deleteMemo(file.path);
+              if (mounted) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('Memo deleted')));
+              }
+            },
+            child: ListTile(
+              title: Text(preview),
+              subtitle: Text(baseName),
+              onTap: () => _openMemo(file.path),
+            ),
           );
         },
       ),

@@ -55,4 +55,22 @@ class MemoStore extends ChangeNotifier {
     await file.writeAsString(text);
     _refreshFiles(); // first line might have changed
   }
+
+  Future<void> deleteMemo(String path) async {
+    final file = File(path);
+    if (await file.exists()) {
+      await file.delete();
+      _refreshFiles();
+    }
+  }
+
+  Future<String?> renameMemo(String oldPath, String newBaseName) async {
+    final oldFile = File(oldPath);
+    if (!await oldFile.exists()) return null;
+    final newPath = '${oldFile.parent.path}/$newBaseName';
+    if (await File(newPath).exists()) return null; // duplicate
+    final newFile = await oldFile.rename(newPath);
+    _refreshFiles();
+    return newFile.path;
+  }
 }
