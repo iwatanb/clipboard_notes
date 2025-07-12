@@ -108,14 +108,23 @@ class _MemoPageState extends State<MemoPage> {
   }
 
   void _setWholeText(String text) {
+    final prevSelection = _controller.selection;
+    final int prevOffset = prevSelection.baseOffset;
+
     _suppressTextListener = true;
     _controller.text = text;
-    _controller.selection = TextSelection.collapsed(
-      offset: _controller.text.length,
-    );
+
+    // Restore cursor position if it was valid
+    if (prevOffset >= 0 && prevOffset <= _controller.text.length) {
+      _controller.selection = TextSelection.collapsed(offset: prevOffset);
+    } else {
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    }
+
     _suppressTextListener = false;
     _refreshViews();
-
     _scheduleSave();
   }
 
@@ -276,14 +285,17 @@ class _MemoPageState extends State<MemoPage> {
                         tooltip: 'Copy',
                         onPressed: () => _copyLine(index),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.content_cut),
-                        tooltip: 'Cut',
-                        onPressed: () => _cutLine(index),
-                      ),
-                      ReorderableDragStartListener(
-                        index: index,
-                        child: const Icon(Icons.drag_handle),
+                      SizedBox(
+                        width: 64,
+                        child: Center(
+                          child: ReorderableDragStartListener(
+                            index: index,
+                            child: const Icon(
+                              Icons.drag_handle_rounded,
+                              size: 36,
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -335,14 +347,17 @@ class _MemoPageState extends State<MemoPage> {
                         tooltip: 'Copy',
                         onPressed: () => _copyParagraph(index),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.content_cut),
-                        tooltip: 'Cut',
-                        onPressed: () => _cutParagraph(index),
-                      ),
-                      ReorderableDragStartListener(
-                        index: index,
-                        child: const Icon(Icons.drag_handle),
+                      SizedBox(
+                        width: 64,
+                        child: Center(
+                          child: ReorderableDragStartListener(
+                            index: index,
+                            child: const Icon(
+                              Icons.drag_handle_rounded,
+                              size: 36,
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -373,21 +388,5 @@ class _MemoPageState extends State<MemoPage> {
     ).showSnackBar(const SnackBar(content: Text('Paragraph copied')));
   }
 
-  Future<void> _cutLine(int index) async {
-    await _copyLine(index);
-    setState(() {
-      _lines.removeAt(index);
-      _setWholeText(_lines.join('\n'));
-    });
-  }
-
-  Future<void> _cutParagraph(int index) async {
-    await _copyParagraph(index);
-    setState(() {
-      _paragraphs.removeAt(index);
-      _setWholeText(_paragraphs.join('\n\n'));
-    });
-  }
-
-  // _pasteAfter removed due to design change
+  // Cut functions removed as delete via swipe is preferred.
 }
