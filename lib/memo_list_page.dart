@@ -37,7 +37,10 @@ class _MemoListPageState extends State<MemoListPage> {
             : firstLine;
       }
     } catch (_) {}
-    return file.uri.pathSegments.last;
+    final base = file.uri.pathSegments.last;
+    return base.endsWith('.txt')
+        ? base.replaceAll(RegExp(r'\.txt$'), '')
+        : base;
   }
 
   @override
@@ -49,10 +52,15 @@ class _MemoListPageState extends State<MemoListPage> {
       body: ListView.builder(
         itemCount: files.length,
         itemBuilder: (context, index) {
-          final file = files[index] as File;
+          final File file = files[index];
+          final preview = _displayName(file);
+          final baseName = file.uri.pathSegments.last.replaceAll(
+            RegExp(r'\.txt$'),
+            '',
+          );
           return ListTile(
-            title: Text(_displayName(file)),
-            subtitle: Text(file.uri.pathSegments.last),
+            title: Text(preview),
+            subtitle: Text(baseName),
             onTap: () => _openMemo(file.path),
           );
         },
