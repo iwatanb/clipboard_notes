@@ -16,6 +16,7 @@ class MemoPage extends StatefulWidget {
 
 class _MemoPageState extends State<MemoPage> {
   late final TextEditingController _controller;
+  late String _path;
   List<String> _lines = [];
   List<String> _paragraphs = [];
   final Map<int, TextEditingController> _lineCtrls = {};
@@ -32,13 +33,14 @@ class _MemoPageState extends State<MemoPage> {
   void initState() {
     super.initState();
     _controller = TextEditingController();
+    _path = widget.filePath;
     _controller.addListener(_onTextChanged);
 
     _initStorage();
   }
 
   Future<void> _initStorage() async {
-    _memoFile = File(widget.filePath);
+    _memoFile = File(_path);
     if (await _memoFile.exists()) {
       final text = await _memoFile.readAsString();
       if (text.isNotEmpty) {
@@ -124,7 +126,7 @@ class _MemoPageState extends State<MemoPage> {
 
   void _saveToFile() {
     final store = context.read<MemoStore>();
-    store.writeMemo(widget.filePath, _controller.text);
+    store.writeMemo(_path, _controller.text);
   }
 
   void _onLineChanged(int index) {
@@ -140,17 +142,73 @@ class _MemoPageState extends State<MemoPage> {
     super.dispose();
   }
 
+  String get _fileName {
+    final base = File(_path).uri.pathSegments.last;
+    return base.endsWith('.txt')
+        ? base.replaceAll(RegExp(r'\.txt$'), '')
+        : base;
+  }
+
+  Future<void> _renameFile() async {
+    final TextEditingController nameCtrl = TextEditingController(
+      text: _fileName,
+    );
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Rename memo'),
+          content: TextField(
+            controller: nameCtrl,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Enter new file name'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, nameCtrl.text.trim()),
+              child: const Text('Rename'),
+            ),
+          ],
+        );
+      },
+    );
+    if (result == null || result.isEmpty) return;
+    final store = context.read<MemoStore>();
+    final newPath = await store.renameMemo(
+      _path,
+      '${result.replaceAll(RegExp(r'\.txt$'), '')}.txt',
+    );
+    if (newPath != null) {
+      setState(() {
+        _path = newPath;
+        _memoFile = File(newPath);
+      });
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Rename failed')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Memo'),
+          title: Text(_fileName),
+          actions: [
+            IconButton(onPressed: _renameFile, icon: const Icon(Icons.edit)),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(icon: Icon(Icons.notes), text: 'All'),
-              Tab(icon: Icon(Icons.list), text: 'Lines'),
+              Tab(icon: Icon(Icons.list), text: 'Line'),
               Tab(icon: Icon(Icons.article), text: 'Paragraph'),
             ],
           ),
@@ -166,6 +224,7 @@ class _MemoPageState extends State<MemoPage> {
                 expands: true,
                 keyboardType: TextInputType.multiline,
                 textAlignVertical: TextAlignVertical.top,
+                style: const TextStyle(fontSize: 14),
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
                   hintText: 'Enter your notes here...',
@@ -201,6 +260,7 @@ class _MemoPageState extends State<MemoPage> {
                           minLines: 1,
                           maxLines: null,
                           keyboardType: TextInputType.multiline,
+                          style: const TextStyle(fontSize: 14),
                           decoration: const InputDecoration(
                             border: OutlineInputBorder(),
                             isDense: true,
@@ -259,6 +319,7 @@ class _MemoPageState extends State<MemoPage> {
                           minLines: 2,
                           maxLines: null,
                           keyboardType: TextInputType.multiline,
+                          style: const TextStyle(fontSize: 14),
                           decoration: const InputDecoration(
                             border: OutlineInputBorder(),
                             isDense: true,
