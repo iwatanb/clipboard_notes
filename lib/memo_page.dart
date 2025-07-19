@@ -14,13 +14,16 @@ class MemoPage extends StatefulWidget {
   State<MemoPage> createState() => _MemoPageState();
 }
 
-class _MemoPageState extends State<MemoPage> {
+class _MemoPageState extends State<MemoPage>
+    with SingleTickerProviderStateMixin {
   late final TextEditingController _controller;
   late String _path;
   List<String> _lines = [];
   List<String> _paragraphs = [];
   final Map<int, TextEditingController> _lineCtrls = {};
   final Map<int, TextEditingController> _paraCtrls = {};
+  // Dedicated TabController managed by this State
+  late final TabController _tabController;
 
   // storage
   late File _memoFile;
@@ -36,6 +39,10 @@ class _MemoPageState extends State<MemoPage> {
     _path = widget.filePath;
     _controller.addListener(_onTextChanged);
 
+    // Initialize TabController and listener
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(_onTabChanged);
+
     _initStorage();
   }
 
@@ -49,9 +56,27 @@ class _MemoPageState extends State<MemoPage> {
     }
   }
 
+  // Called when tab index changes
+  void _onTabChanged() {
+    // Wait until the animation completes
+    if (_tabController.indexIsChanging) return;
+
+    // When user switches *to* Line(1) or Paragraph(2) tab, refresh the split views
+    if (_tabController.index == 1 || _tabController.index == 2) {
+      _refreshViews();
+    }
+  }
+
   void _onTextChanged() {
     if (_suppressTextListener) return;
-    _refreshViews();
+
+    // Only rebuild Line / Paragraph views when those tabs are active.
+    if (_tabController.index != 0) {
+      _refreshViews();
+    }
+
+    // Always schedule save regardless of current tab
+    _scheduleSave();
   }
 
   void _refreshViews() {
@@ -146,6 +171,8 @@ class _MemoPageState extends State<MemoPage> {
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
+    _tabController.dispose();
     _controller.dispose();
     _saveTimer?.cancel();
     super.dispose();
@@ -206,166 +233,177 @@ class _MemoPageState extends State<MemoPage> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(_fileName),
-          actions: [
-            IconButton(onPressed: _renameFile, icon: const Icon(Icons.edit)),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_fileName),
+        actions: [
+          IconButton(onPressed: _renameFile, icon: const Icon(Icons.edit)),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(icon: Icon(Icons.notes), text: 'All'),
+            Tab(icon: Icon(Icons.list), text: 'Line'),
+            Tab(icon: Icon(Icons.article), text: 'Paragraph'),
           ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(icon: Icon(Icons.notes), text: 'All'),
-              Tab(icon: Icon(Icons.list), text: 'Line'),
-              Tab(icon: Icon(Icons.article), text: 'Paragraph'),
-            ],
-          ),
         ),
-        body: TabBarView(
-          children: [
-            // --- All Tab ---
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: TextField(
-                controller: _controller,
-                maxLines: null,
-                expands: true,
-                keyboardType: TextInputType.multiline,
-                textAlignVertical: TextAlignVertical.top,
-                style: const TextStyle(fontSize: 14),
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText: 'Enter your notes here...',
-                ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          // --- All Tab ---
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: _controller,
+              maxLines: null,
+              expands: true,
+              keyboardType: TextInputType.multiline,
+              textAlignVertical: TextAlignVertical.top,
+              style: const TextStyle(fontSize: 14),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'Enter your notes here...',
               ),
             ),
-            // --- Lines Tab ---
-            ReorderableListView.builder(
-              buildDefaultDragHandles: false,
-              itemCount: _lines.length,
-              onReorder: (oldIndex, newIndex) {
-                setState(() {
-                  if (newIndex > oldIndex) newIndex -= 1;
-                  final line = _lines.removeAt(oldIndex);
-                  _lines.insert(newIndex, line);
-                  _setWholeText(_lines.join('\n'));
-                });
-              },
-              itemBuilder: (context, index) {
-                return Padding(
-                  key: ValueKey('line_$index'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Editable line field
-                      Expanded(
-                        child: TextField(
-                          controller: _lineCtrls[index],
-                          minLines: 1,
-                          maxLines: null,
-                          keyboardType: TextInputType.multiline,
-                          style: const TextStyle(fontSize: 14),
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
+          ),
+          // --- Lines Tab ---
+          ReorderableListView.builder(
+            buildDefaultDragHandles: false,
+            itemCount: _lines.length,
+            onReorder: (oldIndex, newIndex) {
+              setState(() {
+                if (newIndex > oldIndex) newIndex -= 1;
+                final line = _lines.removeAt(oldIndex);
+                _lines.insert(newIndex, line);
+                _setWholeText(_lines.join('\n'));
+              });
+            },
+            itemBuilder: (context, index) {
+              return Padding(
+                key: ValueKey('line_$index'),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Number label + drag handle column (fixed width)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: ReorderableDragStartListener(
+                        index: index,
+                        child: SizedBox(
+                          width: 48,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${index + 1}',
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              const Icon(Icons.drag_handle_rounded, size: 24),
+                            ],
                           ),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.content_copy),
-                        tooltip: 'Copy',
-                        onPressed: () => _copyLine(index),
-                      ),
-                      SizedBox(
-                        width: 64,
-                        child: Center(
-                          child: ReorderableDragStartListener(
-                            index: index,
-                            child: const Icon(
-                              Icons.drag_handle_rounded,
-                              size: 36,
-                            ),
+                    ),
+                    // Editable line field
+                    Expanded(
+                      child: TextField(
+                        controller: _lineCtrls[index],
+                        minLines: 1,
+                        maxLines: null,
+                        keyboardType: TextInputType.multiline,
+                        style: const TextStyle(fontSize: 14),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                );
-              },
-            ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.content_copy),
+                      tooltip: 'Copy',
+                      onPressed: () => _copyLine(index),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
 
-            // --- Paragraph Tab ---
-            ReorderableListView.builder(
-              buildDefaultDragHandles: false,
-              itemCount: _paragraphs.length,
-              onReorder: (oldIndex, newIndex) {
-                setState(() {
-                  if (newIndex > oldIndex) newIndex -= 1;
-                  final p = _paragraphs.removeAt(oldIndex);
-                  _paragraphs.insert(newIndex, p);
-                  _setWholeText(_paragraphs.join('\n\n'));
-                });
-              },
-              itemBuilder: (context, index) {
-                return Padding(
-                  key: ValueKey('para_$index'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 6,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _paraCtrls[index],
-                          minLines: 2,
-                          maxLines: null,
-                          keyboardType: TextInputType.multiline,
-                          style: const TextStyle(fontSize: 14),
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 6,
-                            ),
+          // --- Paragraph Tab ---
+          ReorderableListView.builder(
+            buildDefaultDragHandles: false,
+            itemCount: _paragraphs.length,
+            onReorder: (oldIndex, newIndex) {
+              setState(() {
+                if (newIndex > oldIndex) newIndex -= 1;
+                final p = _paragraphs.removeAt(oldIndex);
+                _paragraphs.insert(newIndex, p);
+                _setWholeText(_paragraphs.join('\n\n'));
+              });
+            },
+            itemBuilder: (context, index) {
+              return Padding(
+                key: ValueKey('para_$index'),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Number label + drag handle column (fixed width)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: ReorderableDragStartListener(
+                        index: index,
+                        child: SizedBox(
+                          width: 48,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${index + 1}',
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              const Icon(Icons.drag_handle_rounded, size: 24),
+                            ],
                           ),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.content_copy),
-                        tooltip: 'Copy',
-                        onPressed: () => _copyParagraph(index),
-                      ),
-                      SizedBox(
-                        width: 64,
-                        child: Center(
-                          child: ReorderableDragStartListener(
-                            index: index,
-                            child: const Icon(
-                              Icons.drag_handle_rounded,
-                              size: 36,
-                            ),
+                    ),
+                    Expanded(
+                      child: TextField(
+                        controller: _paraCtrls[index],
+                        minLines: 2,
+                        maxLines: null,
+                        keyboardType: TextInputType.multiline,
+                        style: const TextStyle(fontSize: 14),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.content_copy),
+                      tooltip: 'Copy',
+                      onPressed: () => _copyParagraph(index),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
