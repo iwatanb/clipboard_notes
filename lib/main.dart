@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'memo_list_page.dart';
 import 'package:provider/provider.dart';
 import 'memo_store.dart';
 
 void main() {
+  // Enable verbose rebuild logging
+  debugPrintRebuildDirtyWidgets = true;
   runApp(const MyApp());
 }
 

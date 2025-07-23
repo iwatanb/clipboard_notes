@@ -31,6 +31,10 @@ class _MemoPageState extends State<MemoPage>
 
   // Flag to prevent recursive updates between whole-text and per-line edits
   bool _suppressTextListener = false;
+  // Flag to avoid reacting to controller edits during bulk sync
+  bool _suppressItemListener = false;
+  // Toggle for delete mode (when true shows delete buttons instead of copy)
+  bool _deleteMode = false;
 
   @override
   void initState() {
@@ -65,9 +69,14 @@ class _MemoPageState extends State<MemoPage>
     if (_tabController.index == 1 || _tabController.index == 2) {
       _refreshViews();
     }
+    // Rebuild to update AppBar contents based on current tab
+    setState(() {});
   }
 
   void _onTextChanged() {
+    debugPrint(
+      'onTextChanged tab=${_tabController.index} len=${_controller.text.length}',
+    );
     if (_suppressTextListener) return;
 
     // Only rebuild Line / Paragraph views when those tabs are active.
@@ -89,6 +98,7 @@ class _MemoPageState extends State<MemoPage>
   }
 
   void _syncLineControllers() {
+    _suppressItemListener = true;
     // Ensure controllers for each line exist and contain correct text
     for (var i = 0; i < _lines.length; i++) {
       final lineText = _lines[i];
@@ -103,13 +113,17 @@ class _MemoPageState extends State<MemoPage>
       }
     }
     // Dispose controllers no longer needed
-    _lineCtrls.keys.where((k) => k >= _lines.length).toList().forEach((k) {
-      _lineCtrls[k]!.dispose();
+    final removed = _lineCtrls.keys.where((k) => k >= _lines.length).toList();
+    for (final k in removed) {
+      final ctrl = _lineCtrls[k]!;
+      WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
       _lineCtrls.remove(k);
-    });
+    }
+    _suppressItemListener = false;
   }
 
   void _syncParagraphControllers() {
+    _suppressItemListener = true;
     for (var i = 0; i < _paragraphs.length; i++) {
       final text = _paragraphs[i];
       if (!_paraCtrls.containsKey(i)) {
@@ -120,19 +134,26 @@ class _MemoPageState extends State<MemoPage>
         if (ctrl.text != text) ctrl.text = text;
       }
     }
-    _paraCtrls.keys.where((k) => k >= _paragraphs.length).toList().forEach((k) {
-      _paraCtrls[k]!.dispose();
+    final removed = _paraCtrls.keys
+        .where((k) => k >= _paragraphs.length)
+        .toList();
+    for (final k in removed) {
+      final ctrl = _paraCtrls[k]!;
+      WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
       _paraCtrls.remove(k);
-    });
+    }
+    _suppressItemListener = false;
   }
 
   void _onParagraphChanged(int index) {
+    if (_suppressItemListener) return;
     if (index >= _paragraphs.length) return;
     _paragraphs[index] = _paraCtrls[index]!.text;
     _setWholeText(_paragraphs.join('\n\n'));
   }
 
   void _setWholeText(String text) {
+    debugPrint('setWholeText triggered len=${text.length}');
     final prevSelection = _controller.selection;
     final int prevOffset = prevSelection.baseOffset;
 
@@ -164,6 +185,7 @@ class _MemoPageState extends State<MemoPage>
   }
 
   void _onLineChanged(int index) {
+    if (_suppressItemListener) return;
     if (index >= _lines.length) return;
     _lines[index] = _lineCtrls[index]!.text;
     _setWholeText(_lines.join('\n'));
@@ -235,9 +257,42 @@ class _MemoPageState extends State<MemoPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_fileName),
+        title: _tabController.index == 0 ? Text(_fileName) : null,
         actions: [
-          IconButton(onPressed: _renameFile, icon: const Icon(Icons.edit)),
+          if (_tabController.index == 0)
+            IconButton(onPressed: _renameFile, icon: const Icon(Icons.edit)),
+          if (_tabController.index != 0)
+            IconButton(
+              icon: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Text('mode', style: TextStyle(fontSize: 14)),
+                    SizedBox(width: 4),
+                    Icon(Icons.autorenew, size: 16),
+                  ],
+                ),
+              ),
+              tooltip: 'Toggle mode',
+              onPressed: () {
+                setState(() {
+                  _deleteMode = !_deleteMode;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      _deleteMode ? 'Delete mode ON' : 'Delete mode OFF',
+                    ),
+                    duration: const Duration(milliseconds: 800),
+                  ),
+                );
+              },
+            ),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -250,6 +305,7 @@ class _MemoPageState extends State<MemoPage>
       ),
       body: TabBarView(
         controller: _tabController,
+        physics: const NeverScrollableScrollPhysics(),
         children: [
           // --- All Tab ---
           Padding(
@@ -276,7 +332,9 @@ class _MemoPageState extends State<MemoPage>
                 if (newIndex > oldIndex) newIndex -= 1;
                 final line = _lines.removeAt(oldIndex);
                 _lines.insert(newIndex, line);
-                _setWholeText(_lines.join('\n'));
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _setWholeText(_lines.join('\n'));
+                });
               });
             },
             itemBuilder: (context, index) {
@@ -326,9 +384,14 @@ class _MemoPageState extends State<MemoPage>
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.content_copy),
-                      tooltip: 'Copy',
-                      onPressed: () => _copyLine(index),
+                      icon: Icon(
+                        _deleteMode ? Icons.delete : Icons.content_copy,
+                      ),
+                      color: _deleteMode ? Colors.red : null,
+                      tooltip: _deleteMode ? 'Delete' : 'Copy',
+                      onPressed: _deleteMode
+                          ? () => _confirmDeleteLine(index)
+                          : () => _copyLine(index),
                     ),
                   ],
                 ),
@@ -345,7 +408,9 @@ class _MemoPageState extends State<MemoPage>
                 if (newIndex > oldIndex) newIndex -= 1;
                 final p = _paragraphs.removeAt(oldIndex);
                 _paragraphs.insert(newIndex, p);
-                _setWholeText(_paragraphs.join('\n\n'));
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _setWholeText(_paragraphs.join('\n\n'));
+                });
               });
             },
             itemBuilder: (context, index) {
@@ -394,9 +459,14 @@ class _MemoPageState extends State<MemoPage>
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.content_copy),
-                      tooltip: 'Copy',
-                      onPressed: () => _copyParagraph(index),
+                      icon: Icon(
+                        _deleteMode ? Icons.delete : Icons.content_copy,
+                      ),
+                      color: _deleteMode ? Colors.red : null,
+                      tooltip: _deleteMode ? 'Delete' : 'Copy',
+                      onPressed: _deleteMode
+                          ? () => _confirmDeleteParagraph(index)
+                          : () => _copyParagraph(index),
                     ),
                   ],
                 ),
@@ -424,6 +494,58 @@ class _MemoPageState extends State<MemoPage>
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Paragraph copied')));
+  }
+
+  Future<void> _confirmDeleteLine(int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete line'),
+        content: const Text('Are you sure you want to delete this line?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      _lines.removeAt(index);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _setWholeText(_lines.join('\n'));
+      });
+    }
+  }
+
+  Future<void> _confirmDeleteParagraph(int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete paragraph'),
+        content: const Text('Are you sure you want to delete this paragraph?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      _paragraphs.removeAt(index);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _setWholeText(_paragraphs.join('\n\n'));
+      });
+    }
   }
 
   // Cut functions removed as delete via swipe is preferred.
