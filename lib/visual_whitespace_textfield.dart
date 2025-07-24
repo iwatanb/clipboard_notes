@@ -120,7 +120,6 @@ class _VisualWhitespaceTextFieldState extends State<VisualWhitespaceTextField> {
               renderEditableProvider: _findRenderEditable,
               overlayBoxProvider: () =>
                   context.findRenderObject() as RenderBox?,
-              scrollController: _scrollController,
               textStyle: widget.style ?? DefaultTextStyle.of(context).style,
               color: markerColor,
             ),
@@ -135,14 +134,12 @@ class _WhitespaceOverlayPainter extends CustomPainter {
   _WhitespaceOverlayPainter({
     required this.renderEditableProvider,
     required this.overlayBoxProvider,
-    required this.scrollController,
     required this.textStyle,
     required this.color,
   });
 
   final RenderEditable? Function() renderEditableProvider;
   final RenderBox? Function() overlayBoxProvider;
-  final ScrollController scrollController;
   final TextStyle textStyle;
   final Color color;
 
@@ -209,10 +206,9 @@ class _WhitespaceOverlayPainter extends CustomPainter {
       );
       Offset localTopLeft = overlay.globalToLocal(globalTopLeft);
 
-      // Subtract vertical scroll.
-      if (scrollController.hasClients) {
-        localTopLeft = localTopLeft.translate(0, -scrollController.offset);
-      }
+      // No additional translation: localToGlobal/globalToLocal already reflect
+      // the scroll position of RenderEditable. Removing the manual subtraction
+      // prevents double offset and keeps markers aligned during scrolling.
 
       // Choose appropriate painter.
       final TextPainter glyphPainter = codeUnit == 0x20
@@ -242,7 +238,6 @@ class _WhitespaceOverlayPainter extends CustomPainter {
   bool shouldRepaint(covariant _WhitespaceOverlayPainter oldDelegate) {
     return oldDelegate.renderEditableProvider() != renderEditableProvider() ||
         oldDelegate.textStyle != textStyle ||
-        oldDelegate.color != color ||
-        oldDelegate.scrollController.offset != scrollController.offset;
+        oldDelegate.color != color;
   }
 }
