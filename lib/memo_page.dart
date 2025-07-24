@@ -5,6 +5,7 @@ import 'dart:async';
 // path_provider import removed; handled by caller
 import 'package:provider/provider.dart';
 import 'memo_store.dart';
+import 'visual_whitespace_textfield.dart';
 
 class MemoPage extends StatefulWidget {
   final String filePath;
@@ -310,7 +311,7 @@ class _MemoPageState extends State<MemoPage>
           // --- All Tab ---
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: TextField(
+            child: VisualWhitespaceTextField(
               controller: _controller,
               maxLines: null,
               expands: true,
@@ -367,8 +368,8 @@ class _MemoPageState extends State<MemoPage>
                     ),
                     // Editable line field
                     Expanded(
-                      child: TextField(
-                        controller: _lineCtrls[index],
+                      child: VisualWhitespaceTextField(
+                        controller: _lineCtrls[index]!,
                         minLines: 1,
                         maxLines: null,
                         keyboardType: TextInputType.multiline,
@@ -442,8 +443,8 @@ class _MemoPageState extends State<MemoPage>
                       ),
                     ),
                     Expanded(
-                      child: TextField(
-                        controller: _paraCtrls[index],
+                      child: VisualWhitespaceTextField(
+                        controller: _paraCtrls[index]!,
                         minLines: 2,
                         maxLines: null,
                         keyboardType: TextInputType.multiline,
