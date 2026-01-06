@@ -21,8 +21,10 @@ class _MemoPageState extends State<MemoPage>
   late String _path;
   List<String> _lines = [];
   List<String> _paragraphs = [];
+  List<String> _sections = [];
   final Map<int, TextEditingController> _lineCtrls = {};
   final Map<int, TextEditingController> _paraCtrls = {};
+  final Map<int, TextEditingController> _sectionCtrls = {};
   // Dedicated TabController managed by this State
   late final TabController _tabController;
 
@@ -45,7 +47,7 @@ class _MemoPageState extends State<MemoPage>
     _controller.addListener(_onTextChanged);
 
     // Initialize TabController and listener
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_onTabChanged);
 
     _initStorage();
@@ -66,8 +68,10 @@ class _MemoPageState extends State<MemoPage>
     // Wait until the animation completes
     if (_tabController.indexIsChanging) return;
 
-    // When user switches *to* Line(1) or Paragraph(2) tab, refresh the split views
-    if (_tabController.index == 1 || _tabController.index == 2) {
+    // When user switches *to* Line(1) / Paragraph(2) / Section(3) tab, refresh the split views
+    if (_tabController.index == 1 ||
+        _tabController.index == 2 ||
+        _tabController.index == 3) {
       _refreshViews();
     }
     // Rebuild to update AppBar contents based on current tab
@@ -93,8 +97,10 @@ class _MemoPageState extends State<MemoPage>
     setState(() {
       _lines = _controller.text.split('\n');
       _paragraphs = _controller.text.split(RegExp(r'\n{2,}'));
+      _sections = _controller.text.split(RegExp(r'\n{3,}'));
       _syncLineControllers();
       _syncParagraphControllers();
+      _syncSectionControllers();
     });
   }
 
@@ -146,11 +152,41 @@ class _MemoPageState extends State<MemoPage>
     _suppressItemListener = false;
   }
 
+  void _syncSectionControllers() {
+    _suppressItemListener = true;
+    for (var i = 0; i < _sections.length; i++) {
+      final text = _sections[i];
+      if (!_sectionCtrls.containsKey(i)) {
+        _sectionCtrls[i] = TextEditingController(text: text);
+        _sectionCtrls[i]!.addListener(() => _onSectionChanged(i));
+      } else {
+        final ctrl = _sectionCtrls[i]!;
+        if (ctrl.text != text) ctrl.text = text;
+      }
+    }
+    final removed = _sectionCtrls.keys
+        .where((k) => k >= _sections.length)
+        .toList();
+    for (final k in removed) {
+      final ctrl = _sectionCtrls[k]!;
+      WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
+      _sectionCtrls.remove(k);
+    }
+    _suppressItemListener = false;
+  }
+
   void _onParagraphChanged(int index) {
     if (_suppressItemListener) return;
     if (index >= _paragraphs.length) return;
     _paragraphs[index] = _paraCtrls[index]!.text;
     _setWholeText(_paragraphs.join('\n\n'));
+  }
+
+  void _onSectionChanged(int index) {
+    if (_suppressItemListener) return;
+    if (index >= _sections.length) return;
+    _sections[index] = _sectionCtrls[index]!.text;
+    _setWholeText(_sections.join('\n\n\n'));
   }
 
   void _setWholeText(String text) {
@@ -301,6 +337,7 @@ class _MemoPageState extends State<MemoPage>
             Tab(icon: Icon(Icons.notes), text: 'All'),
             Tab(icon: Icon(Icons.list), text: 'Line'),
             Tab(icon: Icon(Icons.article), text: 'Paragraph'),
+            Tab(icon: Icon(Icons.dashboard_customize), text: 'Section'),
           ],
         ),
       ),
@@ -474,6 +511,81 @@ class _MemoPageState extends State<MemoPage>
               );
             },
           ),
+
+          // --- Section Tab ---
+          ReorderableListView.builder(
+            buildDefaultDragHandles: false,
+            itemCount: _sections.length,
+            onReorder: (oldIndex, newIndex) {
+              setState(() {
+                if (newIndex > oldIndex) newIndex -= 1;
+                final s = _sections.removeAt(oldIndex);
+                _sections.insert(newIndex, s);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _setWholeText(_sections.join('\n\n\n'));
+                });
+              });
+            },
+            itemBuilder: (context, index) {
+              return Padding(
+                key: ValueKey('section_$index'),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Number label + drag handle column (fixed width)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: ReorderableDragStartListener(
+                        index: index,
+                        child: SizedBox(
+                          width: 48,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${index + 1}',
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              const Icon(Icons.drag_handle_rounded, size: 24),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: VisualWhitespaceTextField(
+                        controller: _sectionCtrls[index]!,
+                        minLines: 2,
+                        maxLines: null,
+                        keyboardType: TextInputType.multiline,
+                        style: const TextStyle(fontSize: 14),
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _deleteMode ? Icons.delete : Icons.content_copy,
+                      ),
+                      color: _deleteMode ? Colors.red : null,
+                      tooltip: _deleteMode ? 'Delete' : 'Copy',
+                      onPressed: _deleteMode
+                          ? () => _confirmDeleteSection(index)
+                          : () => _copySection(index),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -545,6 +657,41 @@ class _MemoPageState extends State<MemoPage>
       _paragraphs.removeAt(index);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _setWholeText(_paragraphs.join('\n\n'));
+      });
+    }
+  }
+
+  Future<void> _copySection(int index) async {
+    final text = _sections[index];
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Section copied')));
+  }
+
+  Future<void> _confirmDeleteSection(int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete section'),
+        content: const Text('Are you sure you want to delete this section?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      _sections.removeAt(index);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _setWholeText(_sections.join('\n\n\n'));
       });
     }
   }
