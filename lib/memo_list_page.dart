@@ -152,61 +152,64 @@ class _MemoListPageState extends State<MemoListPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Memos')),
-      body: ListView.builder(
-        itemCount: files.length,
-        itemBuilder: (context, index) {
-          final File file = files[index];
-          final preview = _displayName(file);
-          final baseName = file.uri.pathSegments.last.replaceAll(
-            RegExp(r'\.txt$'),
-            '',
-          );
-          return Dismissible(
-            key: ValueKey(file.path),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              color: Colors.red,
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: const Icon(Icons.delete, color: Colors.white),
-            ),
-            confirmDismiss: (_) async {
-              return await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Delete Memo'),
-                      content: const Text(
-                        'Are you sure you want to delete this memo?',
+      body: SafeArea(
+        bottom: true,
+        child: ListView.builder(
+          itemCount: files.length,
+          itemBuilder: (context, index) {
+            final File file = files[index];
+            final preview = _displayName(file);
+            final baseName = file.uri.pathSegments.last.replaceAll(
+              RegExp(r'\.txt$'),
+              '',
+            );
+            return Dismissible(
+              key: ValueKey(file.path),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                color: Colors.red,
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: const Icon(Icons.delete, color: Colors.white),
+              ),
+              confirmDismiss: (_) async {
+                return await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Delete Memo'),
+                        content: const Text(
+                          'Are you sure you want to delete this memo?',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            child: const Text('Cancel'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.of(ctx).pop(true),
+                            child: const Text('Delete'),
+                          ),
+                        ],
                       ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(false),
-                          child: const Text('Cancel'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(true),
-                          child: const Text('Delete'),
-                        ),
-                      ],
-                    ),
-                  ) ??
-                  false;
-            },
-            onDismissed: (_) async {
-              await context.read<MemoStore>().deleteMemo(file.path);
-              if (mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Memo deleted')));
-              }
-            },
-            child: ListTile(
-              title: Text(preview),
-              subtitle: Text(baseName),
-              onTap: () => _openMemo(file.path),
-            ),
-          );
-        },
+                    ) ??
+                    false;
+              },
+              onDismissed: (_) async {
+                await context.read<MemoStore>().deleteMemo(file.path);
+                if (mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('Memo deleted')));
+                }
+              },
+              child: ListTile(
+                title: Text(preview),
+                subtitle: Text(baseName),
+                onTap: () => _openMemo(file.path),
+              ),
+            );
+          },
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showCreateMemoOptions,

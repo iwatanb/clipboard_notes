@@ -527,378 +527,381 @@ class _MemoPageState extends State<MemoPage>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        physics: const NeverScrollableScrollPhysics(),
-        children: [
-          // --- All Tab ---
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: VisualWhitespaceTextField(
-              key: _editorKey,
-              controller: _controller,
-              highlightRanges: _searchMatches,
-              activeHighlightIndex: _currentMatchIndex,
-              highlightColor: const Color(0x80E5FF00),
-              activeHighlightColor: const Color(0x8001FF02),
-              maxLines: null,
-              expands: true,
-              keyboardType: TextInputType.multiline,
-              textAlignVertical: TextAlignVertical.top,
-              style: const TextStyle(fontSize: 14),
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: 'Enter your notes here...',
+      body: SafeArea(
+        bottom: true,
+        child: TabBarView(
+          controller: _tabController,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            // --- All Tab ---
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: VisualWhitespaceTextField(
+                key: _editorKey,
+                controller: _controller,
+                highlightRanges: _searchMatches,
+                activeHighlightIndex: _currentMatchIndex,
+                highlightColor: const Color(0x80E5FF00),
+                activeHighlightColor: const Color(0x8001FF02),
+                maxLines: null,
+                expands: true,
+                keyboardType: TextInputType.multiline,
+                textAlignVertical: TextAlignVertical.top,
+                style: const TextStyle(fontSize: 14),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter your notes here...',
+                ),
               ),
             ),
-          ),
-          // --- Lines Tab ---
-          ReorderableListView.builder(
-            buildDefaultDragHandles: false,
-            itemCount: _lines.length,
-            onReorder: (oldIndex, newIndex) {
-              setState(() {
-                if (newIndex > oldIndex) newIndex -= 1;
-                final line = _lines.removeAt(oldIndex);
-                final folded = _lineFolded.removeAt(oldIndex);
-                _lines.insert(newIndex, line);
-                _lineFolded.insert(newIndex, folded);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _setWholeText(_lines.join('\n'));
+            // --- Lines Tab ---
+            ReorderableListView.builder(
+              buildDefaultDragHandles: false,
+              itemCount: _lines.length,
+              onReorder: (oldIndex, newIndex) {
+                setState(() {
+                  if (newIndex > oldIndex) newIndex -= 1;
+                  final line = _lines.removeAt(oldIndex);
+                  final folded = _lineFolded.removeAt(oldIndex);
+                  _lines.insert(newIndex, line);
+                  _lineFolded.insert(newIndex, folded);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _setWholeText(_lines.join('\n'));
+                  });
                 });
-              });
-            },
-            itemBuilder: (context, index) {
-              final folded = _lineFolded[index];
-              return Padding(
-                key: ValueKey('line_$index'),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Number label + drag handle column (fixed width)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: ReorderableDragStartListener(
-                        index: index,
-                        child: SizedBox(
-                          width: 48,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${index + 1}',
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              const Icon(Icons.drag_handle_rounded, size: 24),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Editable line field
-                    Expanded(
-                      child: folded
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade400),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                _lines[index].replaceAll('\n', ' '),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                            )
-                          : VisualWhitespaceTextField(
-                              controller: _lineCtrls[index]!,
-                              minLines: 1,
-                              maxLines: null,
-                              keyboardType: TextInputType.multiline,
-                              style: const TextStyle(fontSize: 14),
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
+              },
+              itemBuilder: (context, index) {
+                final folded = _lineFolded[index];
+                return Padding(
+                  key: ValueKey('line_$index'),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Number label + drag handle column (fixed width)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ReorderableDragStartListener(
+                          index: index,
+                          child: SizedBox(
+                            width: 48,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${index + 1}',
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(fontSize: 14),
                                 ),
-                              ),
+                                const Icon(Icons.drag_handle_rounded, size: 24),
+                              ],
                             ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        _itemMode == ItemMode.copy
-                            ? Icons.content_copy
-                            : _itemMode == ItemMode.delete
-                            ? Icons.delete
-                            : (folded ? Icons.unfold_more : Icons.unfold_less),
-                      ),
-                      color: _itemMode == ItemMode.delete ? Colors.red : null,
-                      tooltip: _itemMode == ItemMode.copy
-                          ? 'Copy'
-                          : _itemMode == ItemMode.delete
-                          ? 'Delete'
-                          : (folded ? 'Expand' : 'Fold'),
-                      onPressed: () {
-                        switch (_itemMode) {
-                          case ItemMode.copy:
-                            _copyLine(index);
-                            break;
-                          case ItemMode.delete:
-                            _confirmDeleteLine(index);
-                            break;
-                          case ItemMode.fold:
-                            setState(() {
-                              _lineFolded[index] = !_lineFolded[index];
-                            });
-                            break;
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-
-          // --- Paragraph Tab ---
-          ReorderableListView.builder(
-            buildDefaultDragHandles: false,
-            itemCount: _paragraphs.length,
-            onReorder: (oldIndex, newIndex) {
-              setState(() {
-                if (newIndex > oldIndex) newIndex -= 1;
-                final p = _paragraphs.removeAt(oldIndex);
-                final folded = _paragraphFolded.removeAt(oldIndex);
-                _paragraphs.insert(newIndex, p);
-                _paragraphFolded.insert(newIndex, folded);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _setWholeText(_paragraphs.join('\n\n'));
-                });
-              });
-            },
-            itemBuilder: (context, index) {
-              final folded = _paragraphFolded[index];
-              return Padding(
-                key: ValueKey('para_$index'),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Number label + drag handle column (fixed width)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: ReorderableDragStartListener(
-                        index: index,
-                        child: SizedBox(
-                          width: 48,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${index + 1}',
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              const Icon(Icons.drag_handle_rounded, size: 24),
-                            ],
                           ),
                         ),
                       ),
-                    ),
-                    Expanded(
-                      child: folded
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade400),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                _paragraphs[index].replaceAll('\n', ' '),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                            )
-                          : VisualWhitespaceTextField(
-                              controller: _paraCtrls[index]!,
-                              minLines: 2,
-                              maxLines: null,
-                              keyboardType: TextInputType.multiline,
-                              style: const TextStyle(fontSize: 14),
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(
+                      // Editable line field
+                      Expanded(
+                        child: folded
+                            ? Container(
+                                padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
                                   vertical: 6,
                                 ),
-                              ),
-                            ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        _itemMode == ItemMode.copy
-                            ? Icons.content_copy
-                            : _itemMode == ItemMode.delete
-                            ? Icons.delete
-                            : (folded ? Icons.unfold_more : Icons.unfold_less),
-                      ),
-                      color: _itemMode == ItemMode.delete ? Colors.red : null,
-                      tooltip: _itemMode == ItemMode.copy
-                          ? 'Copy'
-                          : _itemMode == ItemMode.delete
-                          ? 'Delete'
-                          : (folded ? 'Expand' : 'Fold'),
-                      onPressed: () {
-                        switch (_itemMode) {
-                          case ItemMode.copy:
-                            _copyParagraph(index);
-                            break;
-                          case ItemMode.delete:
-                            _confirmDeleteParagraph(index);
-                            break;
-                          case ItemMode.fold:
-                            setState(() {
-                              _paragraphFolded[index] =
-                                  !_paragraphFolded[index];
-                            });
-                            break;
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-
-          // --- Section Tab ---
-          ReorderableListView.builder(
-            buildDefaultDragHandles: false,
-            itemCount: _sections.length,
-            onReorder: (oldIndex, newIndex) {
-              setState(() {
-                if (newIndex > oldIndex) newIndex -= 1;
-                final s = _sections.removeAt(oldIndex);
-                final folded = _sectionFolded.removeAt(oldIndex);
-                _sections.insert(newIndex, s);
-                _sectionFolded.insert(newIndex, folded);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  _setWholeText(_sections.join('\n\n\n'));
-                });
-              });
-            },
-            itemBuilder: (context, index) {
-              final folded = _sectionFolded[index];
-              return Padding(
-                key: ValueKey('section_$index'),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Number label + drag handle column (fixed width)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: ReorderableDragStartListener(
-                        index: index,
-                        child: SizedBox(
-                          width: 48,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${index + 1}',
-                                textAlign: TextAlign.right,
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey.shade400),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  _lines[index].replaceAll('\n', ' '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              )
+                            : VisualWhitespaceTextField(
+                                controller: _lineCtrls[index]!,
+                                minLines: 1,
+                                maxLines: null,
+                                keyboardType: TextInputType.multiline,
                                 style: const TextStyle(fontSize: 14),
+                                decoration: const InputDecoration(
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                ),
                               ),
-                              const Icon(Icons.drag_handle_rounded, size: 24),
-                            ],
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          _itemMode == ItemMode.copy
+                              ? Icons.content_copy
+                              : _itemMode == ItemMode.delete
+                              ? Icons.delete
+                              : (folded ? Icons.unfold_more : Icons.unfold_less),
+                        ),
+                        color: _itemMode == ItemMode.delete ? Colors.red : null,
+                        tooltip: _itemMode == ItemMode.copy
+                            ? 'Copy'
+                            : _itemMode == ItemMode.delete
+                            ? 'Delete'
+                            : (folded ? 'Expand' : 'Fold'),
+                        onPressed: () {
+                          switch (_itemMode) {
+                            case ItemMode.copy:
+                              _copyLine(index);
+                              break;
+                            case ItemMode.delete:
+                              _confirmDeleteLine(index);
+                              break;
+                            case ItemMode.fold:
+                              setState(() {
+                                _lineFolded[index] = !_lineFolded[index];
+                              });
+                              break;
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+
+            // --- Paragraph Tab ---
+            ReorderableListView.builder(
+              buildDefaultDragHandles: false,
+              itemCount: _paragraphs.length,
+              onReorder: (oldIndex, newIndex) {
+                setState(() {
+                  if (newIndex > oldIndex) newIndex -= 1;
+                  final p = _paragraphs.removeAt(oldIndex);
+                  final folded = _paragraphFolded.removeAt(oldIndex);
+                  _paragraphs.insert(newIndex, p);
+                  _paragraphFolded.insert(newIndex, folded);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _setWholeText(_paragraphs.join('\n\n'));
+                  });
+                });
+              },
+              itemBuilder: (context, index) {
+                final folded = _paragraphFolded[index];
+                return Padding(
+                  key: ValueKey('para_$index'),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Number label + drag handle column (fixed width)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ReorderableDragStartListener(
+                          index: index,
+                          child: SizedBox(
+                            width: 48,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${index + 1}',
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                                const Icon(Icons.drag_handle_rounded, size: 24),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    Expanded(
-                      child: folded
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade400),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                _sections[index].replaceAll('\n', ' '),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                            )
-                          : VisualWhitespaceTextField(
-                              controller: _sectionCtrls[index]!,
-                              minLines: 2,
-                              maxLines: null,
-                              keyboardType: TextInputType.multiline,
-                              style: const TextStyle(fontSize: 14),
-                              decoration: const InputDecoration(
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(
+                      Expanded(
+                        child: folded
+                            ? Container(
+                                padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
-                                  vertical: 6,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey.shade400),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  _paragraphs[index].replaceAll('\n', ' '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              )
+                            : VisualWhitespaceTextField(
+                                controller: _paraCtrls[index]!,
+                                minLines: 2,
+                                maxLines: null,
+                                keyboardType: TextInputType.multiline,
+                                style: const TextStyle(fontSize: 14),
+                                decoration: const InputDecoration(
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 6,
+                                  ),
                                 ),
                               ),
-                            ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        _itemMode == ItemMode.copy
-                            ? Icons.content_copy
-                            : _itemMode == ItemMode.delete
-                            ? Icons.delete
-                            : (folded ? Icons.unfold_more : Icons.unfold_less),
                       ),
-                      color: _itemMode == ItemMode.delete ? Colors.red : null,
-                      tooltip: _itemMode == ItemMode.copy
-                          ? 'Copy'
-                          : _itemMode == ItemMode.delete
-                          ? 'Delete'
-                          : (folded ? 'Expand' : 'Fold'),
-                      onPressed: () {
-                        switch (_itemMode) {
-                          case ItemMode.copy:
-                            _copySection(index);
-                            break;
-                          case ItemMode.delete:
-                            _confirmDeleteSection(index);
-                            break;
-                          case ItemMode.fold:
-                            setState(() {
-                              _sectionFolded[index] = !_sectionFolded[index];
-                            });
-                            break;
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
+                      IconButton(
+                        icon: Icon(
+                          _itemMode == ItemMode.copy
+                              ? Icons.content_copy
+                              : _itemMode == ItemMode.delete
+                              ? Icons.delete
+                              : (folded ? Icons.unfold_more : Icons.unfold_less),
+                        ),
+                        color: _itemMode == ItemMode.delete ? Colors.red : null,
+                        tooltip: _itemMode == ItemMode.copy
+                            ? 'Copy'
+                            : _itemMode == ItemMode.delete
+                            ? 'Delete'
+                            : (folded ? 'Expand' : 'Fold'),
+                        onPressed: () {
+                          switch (_itemMode) {
+                            case ItemMode.copy:
+                              _copyParagraph(index);
+                              break;
+                            case ItemMode.delete:
+                              _confirmDeleteParagraph(index);
+                              break;
+                            case ItemMode.fold:
+                              setState(() {
+                                _paragraphFolded[index] =
+                                    !_paragraphFolded[index];
+                              });
+                              break;
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+
+            // --- Section Tab ---
+            ReorderableListView.builder(
+              buildDefaultDragHandles: false,
+              itemCount: _sections.length,
+              onReorder: (oldIndex, newIndex) {
+                setState(() {
+                  if (newIndex > oldIndex) newIndex -= 1;
+                  final s = _sections.removeAt(oldIndex);
+                  final folded = _sectionFolded.removeAt(oldIndex);
+                  _sections.insert(newIndex, s);
+                  _sectionFolded.insert(newIndex, folded);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _setWholeText(_sections.join('\n\n\n'));
+                  });
+                });
+              },
+              itemBuilder: (context, index) {
+                final folded = _sectionFolded[index];
+                return Padding(
+                  key: ValueKey('section_$index'),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Number label + drag handle column (fixed width)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ReorderableDragStartListener(
+                          index: index,
+                          child: SizedBox(
+                            width: 48,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${index + 1}',
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                                const Icon(Icons.drag_handle_rounded, size: 24),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: folded
+                            ? Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey.shade400),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  _sections[index].replaceAll('\n', ' '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              )
+                            : VisualWhitespaceTextField(
+                                controller: _sectionCtrls[index]!,
+                                minLines: 2,
+                                maxLines: null,
+                                keyboardType: TextInputType.multiline,
+                                style: const TextStyle(fontSize: 14),
+                                decoration: const InputDecoration(
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 6,
+                                  ),
+                                ),
+                              ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          _itemMode == ItemMode.copy
+                              ? Icons.content_copy
+                              : _itemMode == ItemMode.delete
+                              ? Icons.delete
+                              : (folded ? Icons.unfold_more : Icons.unfold_less),
+                        ),
+                        color: _itemMode == ItemMode.delete ? Colors.red : null,
+                        tooltip: _itemMode == ItemMode.copy
+                            ? 'Copy'
+                            : _itemMode == ItemMode.delete
+                            ? 'Delete'
+                            : (folded ? 'Expand' : 'Fold'),
+                        onPressed: () {
+                          switch (_itemMode) {
+                            case ItemMode.copy:
+                              _copySection(index);
+                              break;
+                            case ItemMode.delete:
+                              _confirmDeleteSection(index);
+                              break;
+                            case ItemMode.fold:
+                              setState(() {
+                                _sectionFolded[index] = !_sectionFolded[index];
+                              });
+                              break;
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
