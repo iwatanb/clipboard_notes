@@ -23,6 +23,10 @@ class VisualWhitespaceTextField extends StatefulWidget {
     this.keyboardType,
     this.style,
     this.textAlignVertical,
+    this.highlightRanges = const [],
+    this.activeHighlightIndex = -1,
+    this.highlightColor = const Color(0x33FFF59D),
+    this.activeHighlightColor = const Color(0x66FFEE58),
   });
 
   final TextEditingController controller;
@@ -34,13 +38,17 @@ class VisualWhitespaceTextField extends StatefulWidget {
   final TextInputType? keyboardType;
   final TextStyle? style;
   final TextAlignVertical? textAlignVertical;
+  final List<TextRange> highlightRanges;
+  final int activeHighlightIndex;
+  final Color highlightColor;
+  final Color activeHighlightColor;
 
   @override
   State<VisualWhitespaceTextField> createState() =>
-      _VisualWhitespaceTextFieldState();
+      VisualWhitespaceTextFieldState();
 }
 
-class _VisualWhitespaceTextFieldState extends State<VisualWhitespaceTextField> {
+class VisualWhitespaceTextFieldState extends State<VisualWhitespaceTextField> {
   final GlobalKey _textKey = GlobalKey();
   late final ScrollController _scrollController;
 
@@ -88,6 +96,37 @@ class _VisualWhitespaceTextFieldState extends State<VisualWhitespaceTextField> {
     return result;
   }
 
+  void scrollToRange(TextRange range) {
+    final renderEditable = _findRenderEditable();
+    if (renderEditable == null) return;
+    if (!range.isValid) return;
+    if (!_scrollController.hasClients) return;
+
+    final caretRect = renderEditable.getLocalRectForCaret(
+      TextPosition(offset: range.start),
+    );
+    final viewportHeight = renderEditable.size.height;
+    var targetOffset = _scrollController.offset;
+
+    if (caretRect.top < 0) {
+      targetOffset += caretRect.top;
+    } else if (caretRect.bottom > viewportHeight) {
+      targetOffset += caretRect.bottom - viewportHeight;
+    }
+
+    targetOffset = targetOffset.clamp(
+      _scrollController.position.minScrollExtent,
+      _scrollController.position.maxScrollExtent,
+    );
+
+    if ((targetOffset - _scrollController.offset).abs() < 1) return;
+    _scrollController.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final textField = TextField(
@@ -122,6 +161,10 @@ class _VisualWhitespaceTextFieldState extends State<VisualWhitespaceTextField> {
                   context.findRenderObject() as RenderBox?,
               textStyle: widget.style ?? DefaultTextStyle.of(context).style,
               color: markerColor,
+              highlightRanges: widget.highlightRanges,
+              activeHighlightIndex: widget.activeHighlightIndex,
+              highlightColor: widget.highlightColor,
+              activeHighlightColor: widget.activeHighlightColor,
             ),
           ),
         ),
@@ -136,12 +179,20 @@ class _WhitespaceOverlayPainter extends CustomPainter {
     required this.overlayBoxProvider,
     required this.textStyle,
     required this.color,
+    required this.highlightRanges,
+    required this.activeHighlightIndex,
+    required this.highlightColor,
+    required this.activeHighlightColor,
   });
 
   final RenderEditable? Function() renderEditableProvider;
   final RenderBox? Function() overlayBoxProvider;
   final TextStyle textStyle;
   final Color color;
+  final List<TextRange> highlightRanges;
+  final int activeHighlightIndex;
+  final Color highlightColor;
+  final Color activeHighlightColor;
 
   static const String _halfSpaceMarker = '·';
   static const String _fullSpaceMarker = '□';
@@ -154,6 +205,8 @@ class _WhitespaceOverlayPainter extends CustomPainter {
 
     final plainText = renderEditable.text?.toPlainText() ?? '';
     if (plainText.isEmpty) return;
+
+    _paintHighlights(canvas, renderEditable, plainText);
 
     // Prepare glyph painters once.
     final halfPainter = TextPainter(
@@ -234,10 +287,58 @@ class _WhitespaceOverlayPainter extends CustomPainter {
     }
   }
 
+  void _paintHighlights(
+    Canvas canvas,
+    RenderEditable renderEditable,
+    String plainText,
+  ) {
+    if (highlightRanges.isEmpty) return;
+
+    final overlay = overlayBoxProvider();
+    if (overlay == null) return;
+
+    for (int i = 0; i < highlightRanges.length; i++) {
+      final range = highlightRanges[i];
+      if (range.isValid == false) continue;
+      if (range.start >= plainText.length) continue;
+      final clampedEnd = range.end.clamp(0, plainText.length);
+      final clampedStart = range.start.clamp(0, plainText.length);
+      if (clampedStart >= clampedEnd) continue;
+
+      final boxes = renderEditable.getBoxesForSelection(
+        TextSelection(baseOffset: clampedStart, extentOffset: clampedEnd),
+      );
+      if (boxes.isEmpty) continue;
+
+      final paint = Paint()
+        ..color = i == activeHighlightIndex
+            ? activeHighlightColor
+            : highlightColor
+        ..style = PaintingStyle.fill;
+
+      for (final box in boxes) {
+        final rect = box.toRect();
+        final globalTopLeft = renderEditable.localToGlobal(rect.topLeft);
+        final localTopLeft = overlay.globalToLocal(globalTopLeft);
+        final localRect = Rect.fromLTWH(
+          localTopLeft.dx,
+          localTopLeft.dy,
+          rect.width,
+          rect.height,
+        );
+        canvas.drawRect(localRect, paint);
+      }
+    }
+  }
+
   @override
   bool shouldRepaint(covariant _WhitespaceOverlayPainter oldDelegate) {
     return oldDelegate.renderEditableProvider() != renderEditableProvider() ||
         oldDelegate.textStyle != textStyle ||
-        oldDelegate.color != color;
+        oldDelegate.color != color ||
+        oldDelegate.highlightRanges != highlightRanges ||
+        oldDelegate.activeHighlightIndex != activeHighlightIndex ||
+        oldDelegate.highlightColor != highlightColor ||
+        oldDelegate.activeHighlightColor != activeHighlightColor;
   }
 }

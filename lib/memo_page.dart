@@ -21,6 +21,10 @@ class MemoPage extends StatefulWidget {
 class _MemoPageState extends State<MemoPage>
     with SingleTickerProviderStateMixin {
   late final TextEditingController _controller;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  final GlobalKey<VisualWhitespaceTextFieldState> _editorKey =
+      GlobalKey<VisualWhitespaceTextFieldState>();
   late String _path;
   List<String> _lines = [];
   List<String> _paragraphs = [];
@@ -28,6 +32,7 @@ class _MemoPageState extends State<MemoPage>
   final Map<int, TextEditingController> _lineCtrls = {};
   final Map<int, TextEditingController> _paraCtrls = {};
   final Map<int, TextEditingController> _sectionCtrls = {};
+  String _lastText = '';
   // Dedicated TabController managed by this State
   late final TabController _tabController;
 
@@ -45,13 +50,19 @@ class _MemoPageState extends State<MemoPage>
   List<bool> _lineFolded = [];
   List<bool> _paragraphFolded = [];
   List<bool> _sectionFolded = [];
+  // Search UI state
+  bool _isSearchMode = false;
+  final List<TextRange> _searchMatches = [];
+  int _currentMatchIndex = -1;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController();
+    _lastText = _controller.text;
     _path = widget.filePath;
     _controller.addListener(_onTextChanged);
+    _searchController.addListener(_onSearchChanged);
 
     // Initialize TabController and listener
     _tabController = TabController(length: 4, vsync: this);
@@ -90,6 +101,9 @@ class _MemoPageState extends State<MemoPage>
       'onTextChanged tab=${_tabController.index} len=${_controller.text.length}',
     );
     if (_suppressTextListener) return;
+    final currentText = _controller.text;
+    if (currentText == _lastText) return;
+    _lastText = currentText;
 
     // Only rebuild Line / Paragraph views when those tabs are active.
     if (_tabController.index != 0) {
@@ -98,6 +112,69 @@ class _MemoPageState extends State<MemoPage>
 
     // Always schedule save regardless of current tab
     _scheduleSave();
+
+    if (_isSearchMode && _searchController.text.isNotEmpty) {
+      _updateSearchMatches(_searchController.text);
+    }
+  }
+
+  void _onSearchChanged() {
+    if (!_isSearchMode) return;
+    _updateSearchMatches(_searchController.text);
+  }
+
+  void _updateSearchMatches(String query) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      setState(() {
+        _searchMatches.clear();
+        _currentMatchIndex = -1;
+      });
+      return;
+    }
+
+    final text = _controller.text;
+    final matches = <TextRange>[];
+    var startIndex = 0;
+    while (startIndex < text.length) {
+      final index = text.indexOf(trimmed, startIndex);
+      if (index == -1) break;
+      matches.add(TextRange(start: index, end: index + trimmed.length));
+      startIndex = index + trimmed.length;
+    }
+
+    setState(() {
+      _searchMatches
+        ..clear()
+        ..addAll(matches);
+      _currentMatchIndex = matches.isEmpty ? -1 : 0;
+    });
+    _scrollToCurrentMatch();
+  }
+
+  void _selectMatch(int index) {
+    if (_searchMatches.isEmpty) return;
+    final count = _searchMatches.length;
+    final wrapped = ((index % count) + count) % count;
+    setState(() {
+      _currentMatchIndex = wrapped;
+    });
+    final range = _searchMatches[wrapped];
+    _controller.selection = TextSelection(
+      baseOffset: range.start,
+      extentOffset: range.end,
+    );
+    _scrollToCurrentMatch();
+  }
+
+  void _scrollToCurrentMatch() {
+    if (_currentMatchIndex < 0 || _currentMatchIndex >= _searchMatches.length) {
+      return;
+    }
+    final range = _searchMatches[_currentMatchIndex];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _editorKey.currentState?.scrollToRange(range);
+    });
   }
 
   void _refreshViews() {
@@ -231,6 +308,7 @@ class _MemoPageState extends State<MemoPage>
 
     _suppressTextListener = true;
     _controller.text = text;
+    _lastText = text;
 
     // Restore cursor position if it was valid
     if (prevOffset >= 0 && prevOffset <= _controller.text.length) {
@@ -268,6 +346,8 @@ class _MemoPageState extends State<MemoPage>
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _controller.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     _saveTimer?.cancel();
     super.dispose();
   }
@@ -325,14 +405,79 @@ class _MemoPageState extends State<MemoPage>
     }
   }
 
+  void _enterSearchMode() {
+    setState(() {
+      _isSearchMode = true;
+    });
+    _searchFocusNode.requestFocus();
+  }
+
+  void _exitSearchMode() {
+    setState(() {
+      _isSearchMode = false;
+      _searchController.clear();
+      _searchMatches.clear();
+      _currentMatchIndex = -1;
+    });
+    _searchFocusNode.unfocus();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: _tabController.index == 0 ? Text(_fileName) : null,
+        title: _tabController.index == 0
+            ? (_isSearchMode
+                  ? TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      style: const TextStyle(fontSize: 16),
+                      decoration: const InputDecoration(
+                        hintText: 'Search in memo...',
+                        border: InputBorder.none,
+                      ),
+                    )
+                  : Text(_fileName, style: const TextStyle(fontSize: 16)))
+            : null,
         actions: [
-          if (_tabController.index == 0)
+          if (_tabController.index == 0 && !_isSearchMode)
             IconButton(onPressed: _renameFile, icon: const Icon(Icons.edit)),
+          if (_tabController.index == 0 && !_isSearchMode)
+            const SizedBox(width: 48),
+          if (_tabController.index == 0 && _isSearchMode)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Text(
+                  _searchMatches.isEmpty
+                      ? '0/0'
+                      : '${_currentMatchIndex + 1}/${_searchMatches.length}',
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+            ),
+          if (_tabController.index == 0 && _isSearchMode)
+            IconButton(
+              tooltip: 'Previous match',
+              icon: const Icon(Icons.keyboard_arrow_up),
+              onPressed: _searchMatches.isEmpty
+                  ? null
+                  : () => _selectMatch(_currentMatchIndex - 1),
+            ),
+          if (_tabController.index == 0 && _isSearchMode)
+            IconButton(
+              tooltip: 'Next match',
+              icon: const Icon(Icons.keyboard_arrow_down),
+              onPressed: _searchMatches.isEmpty
+                  ? null
+                  : () => _selectMatch(_currentMatchIndex + 1),
+            ),
+          if (_tabController.index == 0)
+            IconButton(
+              onPressed: _isSearchMode ? _exitSearchMode : _enterSearchMode,
+              icon: Icon(_isSearchMode ? Icons.close : Icons.search),
+            ),
+          if (_tabController.index == 0) const SizedBox(width: 48),
           if (_tabController.index != 0)
             IconButton(
               icon: Container(
@@ -390,7 +535,12 @@ class _MemoPageState extends State<MemoPage>
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: VisualWhitespaceTextField(
+              key: _editorKey,
               controller: _controller,
+              highlightRanges: _searchMatches,
+              activeHighlightIndex: _currentMatchIndex,
+              highlightColor: const Color(0x80E5FF00),
+              activeHighlightColor: const Color(0x8001FF02),
               maxLines: null,
               expands: true,
               keyboardType: TextInputType.multiline,
