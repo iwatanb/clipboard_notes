@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
 import 'dart:async';
+import 'dart:math' as math;
 // path_provider import removed; handled by caller
 import 'package:provider/provider.dart';
 import 'memo_store.dart';
 import 'visual_whitespace_textfield.dart';
+
+enum ItemMode { copy, delete, fold }
 
 class MemoPage extends StatefulWidget {
   final String filePath;
@@ -36,8 +39,12 @@ class _MemoPageState extends State<MemoPage>
   bool _suppressTextListener = false;
   // Flag to avoid reacting to controller edits during bulk sync
   bool _suppressItemListener = false;
-  // Toggle for delete mode (when true shows delete buttons instead of copy)
-  bool _deleteMode = false;
+  // mode toggle: copy -> delete -> fold
+  ItemMode _itemMode = ItemMode.copy;
+  // Per-item folded state
+  List<bool> _lineFolded = [];
+  List<bool> _paragraphFolded = [];
+  List<bool> _sectionFolded = [];
 
   @override
   void initState() {
@@ -101,7 +108,35 @@ class _MemoPageState extends State<MemoPage>
       _syncLineControllers();
       _syncParagraphControllers();
       _syncSectionControllers();
+      _syncFoldStates();
     });
+  }
+
+  void _syncFoldStates() {
+    _lineFolded = _resizeBoolList(_lineFolded, _lines.length);
+    _paragraphFolded = _resizeBoolList(_paragraphFolded, _paragraphs.length);
+    _sectionFolded = _resizeBoolList(_sectionFolded, _sections.length);
+  }
+
+  List<bool> _resizeBoolList(List<bool> current, int length) {
+    // create growable list to allow remove/insert during reorder
+    final newList = List<bool>.filled(length, false, growable: true);
+    final copyLen = math.min(current.length, length);
+    for (var i = 0; i < copyLen; i++) {
+      newList[i] = current[i];
+    }
+    return newList;
+  }
+
+  String _modeLabel(ItemMode mode) {
+    switch (mode) {
+      case ItemMode.copy:
+        return 'Copy';
+      case ItemMode.delete:
+        return 'Delete';
+      case ItemMode.fold:
+        return 'Fold';
+    }
   }
 
   void _syncLineControllers() {
@@ -308,23 +343,29 @@ class _MemoPageState extends State<MemoPage>
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Text('mode', style: TextStyle(fontSize: 14)),
-                    SizedBox(width: 4),
-                    Icon(Icons.autorenew, size: 16),
+                  children: [
+                    const Text('mode', style: TextStyle(fontSize: 14)),
+                    const SizedBox(width: 4),
+                    Icon(
+                      _itemMode == ItemMode.copy
+                          ? Icons.content_copy
+                          : _itemMode == ItemMode.delete
+                          ? Icons.delete
+                          : Icons.unfold_less,
+                      size: 16,
+                    ),
                   ],
                 ),
               ),
               tooltip: 'Toggle mode',
               onPressed: () {
                 setState(() {
-                  _deleteMode = !_deleteMode;
+                  _itemMode = ItemMode
+                      .values[(_itemMode.index + 1) % ItemMode.values.length];
                 });
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(
-                      _deleteMode ? 'Delete mode ON' : 'Delete mode OFF',
-                    ),
+                    content: Text('Mode: ${_modeLabel(_itemMode)}'),
                     duration: const Duration(milliseconds: 800),
                   ),
                 );
@@ -369,13 +410,16 @@ class _MemoPageState extends State<MemoPage>
               setState(() {
                 if (newIndex > oldIndex) newIndex -= 1;
                 final line = _lines.removeAt(oldIndex);
+                final folded = _lineFolded.removeAt(oldIndex);
                 _lines.insert(newIndex, line);
+                _lineFolded.insert(newIndex, folded);
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _setWholeText(_lines.join('\n'));
                 });
               });
             },
             itemBuilder: (context, index) {
+              final folded = _lineFolded[index];
               return Padding(
                 key: ValueKey('line_$index'),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -405,31 +449,68 @@ class _MemoPageState extends State<MemoPage>
                     ),
                     // Editable line field
                     Expanded(
-                      child: VisualWhitespaceTextField(
-                        controller: _lineCtrls[index]!,
-                        minLines: 1,
-                        maxLines: null,
-                        keyboardType: TextInputType.multiline,
-                        style: const TextStyle(fontSize: 14),
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                        ),
-                      ),
+                      child: folded
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade400),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                _lines[index].replaceAll('\n', ' '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            )
+                          : VisualWhitespaceTextField(
+                              controller: _lineCtrls[index]!,
+                              minLines: 1,
+                              maxLines: null,
+                              keyboardType: TextInputType.multiline,
+                              style: const TextStyle(fontSize: 14),
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                              ),
+                            ),
                     ),
                     IconButton(
                       icon: Icon(
-                        _deleteMode ? Icons.delete : Icons.content_copy,
+                        _itemMode == ItemMode.copy
+                            ? Icons.content_copy
+                            : _itemMode == ItemMode.delete
+                            ? Icons.delete
+                            : (folded ? Icons.unfold_more : Icons.unfold_less),
                       ),
-                      color: _deleteMode ? Colors.red : null,
-                      tooltip: _deleteMode ? 'Delete' : 'Copy',
-                      onPressed: _deleteMode
-                          ? () => _confirmDeleteLine(index)
-                          : () => _copyLine(index),
+                      color: _itemMode == ItemMode.delete ? Colors.red : null,
+                      tooltip: _itemMode == ItemMode.copy
+                          ? 'Copy'
+                          : _itemMode == ItemMode.delete
+                          ? 'Delete'
+                          : (folded ? 'Expand' : 'Fold'),
+                      onPressed: () {
+                        switch (_itemMode) {
+                          case ItemMode.copy:
+                            _copyLine(index);
+                            break;
+                          case ItemMode.delete:
+                            _confirmDeleteLine(index);
+                            break;
+                          case ItemMode.fold:
+                            setState(() {
+                              _lineFolded[index] = !_lineFolded[index];
+                            });
+                            break;
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -445,13 +526,16 @@ class _MemoPageState extends State<MemoPage>
               setState(() {
                 if (newIndex > oldIndex) newIndex -= 1;
                 final p = _paragraphs.removeAt(oldIndex);
+                final folded = _paragraphFolded.removeAt(oldIndex);
                 _paragraphs.insert(newIndex, p);
+                _paragraphFolded.insert(newIndex, folded);
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _setWholeText(_paragraphs.join('\n\n'));
                 });
               });
             },
             itemBuilder: (context, index) {
+              final folded = _paragraphFolded[index];
               return Padding(
                 key: ValueKey('para_$index'),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -480,31 +564,69 @@ class _MemoPageState extends State<MemoPage>
                       ),
                     ),
                     Expanded(
-                      child: VisualWhitespaceTextField(
-                        controller: _paraCtrls[index]!,
-                        minLines: 2,
-                        maxLines: null,
-                        keyboardType: TextInputType.multiline,
-                        style: const TextStyle(fontSize: 14),
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 6,
-                          ),
-                        ),
-                      ),
+                      child: folded
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade400),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                _paragraphs[index].replaceAll('\n', ' '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            )
+                          : VisualWhitespaceTextField(
+                              controller: _paraCtrls[index]!,
+                              minLines: 2,
+                              maxLines: null,
+                              keyboardType: TextInputType.multiline,
+                              style: const TextStyle(fontSize: 14),
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                              ),
+                            ),
                     ),
                     IconButton(
                       icon: Icon(
-                        _deleteMode ? Icons.delete : Icons.content_copy,
+                        _itemMode == ItemMode.copy
+                            ? Icons.content_copy
+                            : _itemMode == ItemMode.delete
+                            ? Icons.delete
+                            : (folded ? Icons.unfold_more : Icons.unfold_less),
                       ),
-                      color: _deleteMode ? Colors.red : null,
-                      tooltip: _deleteMode ? 'Delete' : 'Copy',
-                      onPressed: _deleteMode
-                          ? () => _confirmDeleteParagraph(index)
-                          : () => _copyParagraph(index),
+                      color: _itemMode == ItemMode.delete ? Colors.red : null,
+                      tooltip: _itemMode == ItemMode.copy
+                          ? 'Copy'
+                          : _itemMode == ItemMode.delete
+                          ? 'Delete'
+                          : (folded ? 'Expand' : 'Fold'),
+                      onPressed: () {
+                        switch (_itemMode) {
+                          case ItemMode.copy:
+                            _copyParagraph(index);
+                            break;
+                          case ItemMode.delete:
+                            _confirmDeleteParagraph(index);
+                            break;
+                          case ItemMode.fold:
+                            setState(() {
+                              _paragraphFolded[index] =
+                                  !_paragraphFolded[index];
+                            });
+                            break;
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -520,13 +642,16 @@ class _MemoPageState extends State<MemoPage>
               setState(() {
                 if (newIndex > oldIndex) newIndex -= 1;
                 final s = _sections.removeAt(oldIndex);
+                final folded = _sectionFolded.removeAt(oldIndex);
                 _sections.insert(newIndex, s);
+                _sectionFolded.insert(newIndex, folded);
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _setWholeText(_sections.join('\n\n\n'));
                 });
               });
             },
             itemBuilder: (context, index) {
+              final folded = _sectionFolded[index];
               return Padding(
                 key: ValueKey('section_$index'),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -555,31 +680,68 @@ class _MemoPageState extends State<MemoPage>
                       ),
                     ),
                     Expanded(
-                      child: VisualWhitespaceTextField(
-                        controller: _sectionCtrls[index]!,
-                        minLines: 2,
-                        maxLines: null,
-                        keyboardType: TextInputType.multiline,
-                        style: const TextStyle(fontSize: 14),
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 6,
-                          ),
-                        ),
-                      ),
+                      child: folded
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade400),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                _sections[index].replaceAll('\n', ' '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                            )
+                          : VisualWhitespaceTextField(
+                              controller: _sectionCtrls[index]!,
+                              minLines: 2,
+                              maxLines: null,
+                              keyboardType: TextInputType.multiline,
+                              style: const TextStyle(fontSize: 14),
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                              ),
+                            ),
                     ),
                     IconButton(
                       icon: Icon(
-                        _deleteMode ? Icons.delete : Icons.content_copy,
+                        _itemMode == ItemMode.copy
+                            ? Icons.content_copy
+                            : _itemMode == ItemMode.delete
+                            ? Icons.delete
+                            : (folded ? Icons.unfold_more : Icons.unfold_less),
                       ),
-                      color: _deleteMode ? Colors.red : null,
-                      tooltip: _deleteMode ? 'Delete' : 'Copy',
-                      onPressed: _deleteMode
-                          ? () => _confirmDeleteSection(index)
-                          : () => _copySection(index),
+                      color: _itemMode == ItemMode.delete ? Colors.red : null,
+                      tooltip: _itemMode == ItemMode.copy
+                          ? 'Copy'
+                          : _itemMode == ItemMode.delete
+                          ? 'Delete'
+                          : (folded ? 'Expand' : 'Fold'),
+                      onPressed: () {
+                        switch (_itemMode) {
+                          case ItemMode.copy:
+                            _copySection(index);
+                            break;
+                          case ItemMode.delete:
+                            _confirmDeleteSection(index);
+                            break;
+                          case ItemMode.fold:
+                            setState(() {
+                              _sectionFolded[index] = !_sectionFolded[index];
+                            });
+                            break;
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -629,6 +791,7 @@ class _MemoPageState extends State<MemoPage>
     );
     if (confirmed == true) {
       _lines.removeAt(index);
+      _lineFolded.removeAt(index);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _setWholeText(_lines.join('\n'));
       });
@@ -655,6 +818,7 @@ class _MemoPageState extends State<MemoPage>
     );
     if (confirmed == true) {
       _paragraphs.removeAt(index);
+      _paragraphFolded.removeAt(index);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _setWholeText(_paragraphs.join('\n\n'));
       });
@@ -690,6 +854,7 @@ class _MemoPageState extends State<MemoPage>
     );
     if (confirmed == true) {
       _sections.removeAt(index);
+      _sectionFolded.removeAt(index);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _setWholeText(_sections.join('\n\n\n'));
       });

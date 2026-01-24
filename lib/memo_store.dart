@@ -42,6 +42,15 @@ class MemoStore extends ChangeNotifier {
     return path;
   }
 
+  Future<String> createMemoFromFile(String content) async {
+    final path =
+        '${_docDir.path}/memo_${DateTime.now().millisecondsSinceEpoch}.txt';
+    final file = File(path);
+    await file.writeAsString(content);
+    _refreshFiles();
+    return path;
+  }
+
   Future<String> readMemo(String path) async {
     final file = File(path);
     if (await file.exists()) {
