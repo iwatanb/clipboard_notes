@@ -32,6 +32,9 @@ class _MemoPageState extends State<MemoPage>
   final Map<int, TextEditingController> _lineCtrls = {};
   final Map<int, TextEditingController> _paraCtrls = {};
   final Map<int, TextEditingController> _sectionCtrls = {};
+  final Map<int, FocusNode> _lineFocusNodes = {};
+  final Map<int, FocusNode> _paraFocusNodes = {};
+  final Map<int, FocusNode> _sectionFocusNodes = {};
   String _lastText = '';
   // Dedicated TabController managed by this State
   late final TabController _tabController;
@@ -230,13 +233,29 @@ class _MemoPageState extends State<MemoPage>
           ctrl.text = lineText;
         }
       }
+      _lineFocusNodes.putIfAbsent(i, FocusNode.new);
+      final index = i;
+      _lineFocusNodes[index]!.onKeyEvent = (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.backspace) {
+          if (_handleLineBackspaceAtStart(index)) {
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      };
     }
-    // Dispose controllers no longer needed
+    // Dispose controllers and focus nodes no longer needed
     final removed = _lineCtrls.keys.where((k) => k >= _lines.length).toList();
     for (final k in removed) {
       final ctrl = _lineCtrls[k]!;
-      WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
+      final focus = _lineFocusNodes[k];
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ctrl.dispose();
+        focus?.dispose();
+      });
       _lineCtrls.remove(k);
+      _lineFocusNodes.remove(k);
     }
     _suppressItemListener = false;
   }
@@ -252,14 +271,30 @@ class _MemoPageState extends State<MemoPage>
         final ctrl = _paraCtrls[i]!;
         if (ctrl.text != text) ctrl.text = text;
       }
+      _paraFocusNodes.putIfAbsent(i, FocusNode.new);
+      final index = i;
+      _paraFocusNodes[index]!.onKeyEvent = (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.backspace) {
+          if (_handleParagraphBackspaceAtStart(index)) {
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      };
     }
     final removed = _paraCtrls.keys
         .where((k) => k >= _paragraphs.length)
         .toList();
     for (final k in removed) {
       final ctrl = _paraCtrls[k]!;
-      WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
+      final focus = _paraFocusNodes[k];
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ctrl.dispose();
+        focus?.dispose();
+      });
       _paraCtrls.remove(k);
+      _paraFocusNodes.remove(k);
     }
     _suppressItemListener = false;
   }
@@ -275,14 +310,30 @@ class _MemoPageState extends State<MemoPage>
         final ctrl = _sectionCtrls[i]!;
         if (ctrl.text != text) ctrl.text = text;
       }
+      _sectionFocusNodes.putIfAbsent(i, FocusNode.new);
+      final index = i;
+      _sectionFocusNodes[index]!.onKeyEvent = (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.backspace) {
+          if (_handleSectionBackspaceAtStart(index)) {
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      };
     }
     final removed = _sectionCtrls.keys
         .where((k) => k >= _sections.length)
         .toList();
     for (final k in removed) {
       final ctrl = _sectionCtrls[k]!;
-      WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
+      final focus = _sectionFocusNodes[k];
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ctrl.dispose();
+        focus?.dispose();
+      });
       _sectionCtrls.remove(k);
+      _sectionFocusNodes.remove(k);
     }
     _suppressItemListener = false;
   }
@@ -341,6 +392,110 @@ class _MemoPageState extends State<MemoPage>
     _setWholeText(_lines.join('\n'));
   }
 
+  bool _handleLineBackspaceAtStart(int index) {
+    if (index <= 0) return false;
+    final ctrl = _lineCtrls[index];
+    if (ctrl == null) return false;
+    if (ctrl.selection.baseOffset != 0) return false;
+    final updated = _removeNthNewline(_controller.text, index - 1);
+    if (updated == null) return false;
+    _setWholeText(updated);
+    _focusLineItemStart(index);
+    return true;
+  }
+
+  bool _handleParagraphBackspaceAtStart(int index) {
+    if (index <= 0) return false;
+    final ctrl = _paraCtrls[index];
+    if (ctrl == null) return false;
+    if (ctrl.selection.baseOffset != 0) return false;
+    final updated = _removeDelimiterRun(
+      _controller.text,
+      RegExp(r'\n{2,}'),
+      index - 1,
+    );
+    if (updated == null) return false;
+    _setWholeText(updated);
+    _focusParagraphItemStart(index);
+    return true;
+  }
+
+  bool _handleSectionBackspaceAtStart(int index) {
+    if (index <= 0) return false;
+    final ctrl = _sectionCtrls[index];
+    if (ctrl == null) return false;
+    if (ctrl.selection.baseOffset != 0) return false;
+    final updated = _removeDelimiterRun(
+      _controller.text,
+      RegExp(r'\n{3,}'),
+      index - 1,
+    );
+    if (updated == null) return false;
+    _setWholeText(updated);
+    _focusSectionItemStart(index);
+    return true;
+  }
+
+  void _focusLineItemStart(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (index < 0 || index >= _lines.length) return;
+      final focus = _lineFocusNodes[index];
+      final ctrl = _lineCtrls[index];
+      if (focus == null || ctrl == null) return;
+      focus.requestFocus();
+      ctrl.selection = const TextSelection.collapsed(offset: 0);
+    });
+  }
+
+  void _focusParagraphItemStart(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (index < 0 || index >= _paragraphs.length) return;
+      final focus = _paraFocusNodes[index];
+      final ctrl = _paraCtrls[index];
+      if (focus == null || ctrl == null) return;
+      focus.requestFocus();
+      ctrl.selection = const TextSelection.collapsed(offset: 0);
+    });
+  }
+
+  void _focusSectionItemStart(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (index < 0 || index >= _sections.length) return;
+      final focus = _sectionFocusNodes[index];
+      final ctrl = _sectionCtrls[index];
+      if (focus == null || ctrl == null) return;
+      focus.requestFocus();
+      ctrl.selection = const TextSelection.collapsed(offset: 0);
+    });
+  }
+
+  String? _removeNthNewline(String text, int nth) {
+    if (nth < 0) return null;
+    var count = 0;
+    for (var i = 0; i < text.length; i++) {
+      if (text.codeUnitAt(i) == 0x0A) {
+        if (count == nth) {
+          return text.substring(0, i) + text.substring(i + 1);
+        }
+        count += 1;
+      }
+    }
+    return null;
+  }
+
+  String? _removeDelimiterRun(String text, RegExp regex, int runIndex) {
+    if (runIndex < 0) return null;
+    final matches = regex.allMatches(text).toList(growable: false);
+    if (runIndex >= matches.length) return null;
+    final match = matches[runIndex];
+    if (match.start >= text.length) return null;
+    if (text.codeUnitAt(match.start) != 0x0A) return null;
+    return text.substring(0, match.start) + text.substring(match.start + 1);
+  }
+
   @override
   void dispose() {
     _tabController.removeListener(_onTabChanged);
@@ -348,6 +503,15 @@ class _MemoPageState extends State<MemoPage>
     _controller.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
+    for (final node in _lineFocusNodes.values) {
+      node.dispose();
+    }
+    for (final node in _paraFocusNodes.values) {
+      node.dispose();
+    }
+    for (final node in _sectionFocusNodes.values) {
+      node.dispose();
+    }
     _saveTimer?.cancel();
     super.dispose();
   }
@@ -574,7 +738,10 @@ class _MemoPageState extends State<MemoPage>
                 final folded = _lineFolded[index];
                 return Padding(
                   key: ValueKey('line_$index'),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -608,7 +775,9 @@ class _MemoPageState extends State<MemoPage>
                                   vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey.shade400),
+                                  border: Border.all(
+                                    color: Colors.grey.shade400,
+                                  ),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -620,6 +789,7 @@ class _MemoPageState extends State<MemoPage>
                               )
                             : VisualWhitespaceTextField(
                                 controller: _lineCtrls[index]!,
+                                focusNode: _lineFocusNodes[index],
                                 minLines: 1,
                                 maxLines: null,
                                 keyboardType: TextInputType.multiline,
@@ -640,7 +810,9 @@ class _MemoPageState extends State<MemoPage>
                               ? Icons.content_copy
                               : _itemMode == ItemMode.delete
                               ? Icons.delete
-                              : (folded ? Icons.unfold_more : Icons.unfold_less),
+                              : (folded
+                                    ? Icons.unfold_more
+                                    : Icons.unfold_less),
                         ),
                         color: _itemMode == ItemMode.delete ? Colors.red : null,
                         tooltip: _itemMode == ItemMode.copy
@@ -690,7 +862,10 @@ class _MemoPageState extends State<MemoPage>
                 final folded = _paragraphFolded[index];
                 return Padding(
                   key: ValueKey('para_$index'),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -723,7 +898,9 @@ class _MemoPageState extends State<MemoPage>
                                   vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey.shade400),
+                                  border: Border.all(
+                                    color: Colors.grey.shade400,
+                                  ),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -735,6 +912,7 @@ class _MemoPageState extends State<MemoPage>
                               )
                             : VisualWhitespaceTextField(
                                 controller: _paraCtrls[index]!,
+                                focusNode: _paraFocusNodes[index],
                                 minLines: 2,
                                 maxLines: null,
                                 keyboardType: TextInputType.multiline,
@@ -755,7 +933,9 @@ class _MemoPageState extends State<MemoPage>
                               ? Icons.content_copy
                               : _itemMode == ItemMode.delete
                               ? Icons.delete
-                              : (folded ? Icons.unfold_more : Icons.unfold_less),
+                              : (folded
+                                    ? Icons.unfold_more
+                                    : Icons.unfold_less),
                         ),
                         color: _itemMode == ItemMode.delete ? Colors.red : null,
                         tooltip: _itemMode == ItemMode.copy
@@ -806,7 +986,10 @@ class _MemoPageState extends State<MemoPage>
                 final folded = _sectionFolded[index];
                 return Padding(
                   key: ValueKey('section_$index'),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -839,7 +1022,9 @@ class _MemoPageState extends State<MemoPage>
                                   vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey.shade400),
+                                  border: Border.all(
+                                    color: Colors.grey.shade400,
+                                  ),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -851,6 +1036,7 @@ class _MemoPageState extends State<MemoPage>
                               )
                             : VisualWhitespaceTextField(
                                 controller: _sectionCtrls[index]!,
+                                focusNode: _sectionFocusNodes[index],
                                 minLines: 2,
                                 maxLines: null,
                                 keyboardType: TextInputType.multiline,
@@ -871,7 +1057,9 @@ class _MemoPageState extends State<MemoPage>
                               ? Icons.content_copy
                               : _itemMode == ItemMode.delete
                               ? Icons.delete
-                              : (folded ? Icons.unfold_more : Icons.unfold_less),
+                              : (folded
+                                    ? Icons.unfold_more
+                                    : Icons.unfold_less),
                         ),
                         color: _itemMode == ItemMode.delete ? Colors.red : null,
                         tooltip: _itemMode == ItemMode.copy
