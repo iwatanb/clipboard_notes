@@ -47,6 +47,75 @@ class _MemoListPageState extends State<MemoListPage> {
     );
   }
 
+  Future<bool> _confirmDelete() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Delete Memo'),
+            content: const Text('Are you sure you want to delete this memo?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _deleteMemo(String path) async {
+    await context.read<MemoStore>().deleteMemo(path);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Memo deleted')),
+      );
+    }
+  }
+
+  Future<void> _renameMemo({
+    required String path,
+    required String currentBaseName,
+  }) async {
+    final controller = TextEditingController(text: currentBaseName);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Memo'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'New name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    final trimmed = newName?.trim() ?? '';
+    if (trimmed.isEmpty) return;
+    final baseName = trimmed.endsWith('.txt') ? trimmed : '$trimmed.txt';
+    final newPath = await context.read<MemoStore>().renameMemo(path, baseName);
+    if (!mounted) return;
+    if (newPath == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Rename failed')),
+      );
+    }
+  }
+
   Future<String?> _pickTextFileContent() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.any,
@@ -128,24 +197,6 @@ class _MemoListPageState extends State<MemoListPage> {
     }
   }
 
-  String _displayName(File file) {
-    try {
-      final firstLine = file.readAsLinesSync().firstWhere(
-        (l) => l.trim().isNotEmpty,
-        orElse: () => '',
-      );
-      if (firstLine.isNotEmpty) {
-        return firstLine.length > 30
-            ? '${firstLine.substring(0, 30)}…'
-            : firstLine;
-      }
-    } catch (_) {}
-    final base = file.uri.pathSegments.last;
-    return base.endsWith('.txt')
-        ? base.replaceAll(RegExp(r'\.txt$'), '')
-        : base;
-  }
-
   @override
   Widget build(BuildContext context) {
     final files = context.watch<MemoStore>().files;
@@ -158,7 +209,6 @@ class _MemoListPageState extends State<MemoListPage> {
           itemCount: files.length,
           itemBuilder: (context, index) {
             final File file = files[index];
-            final preview = _displayName(file);
             final baseName = file.uri.pathSegments.last.replaceAll(
               RegExp(r'\.txt$'),
               '',
@@ -172,40 +222,35 @@ class _MemoListPageState extends State<MemoListPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: const Icon(Icons.delete, color: Colors.white),
               ),
-              confirmDismiss: (_) async {
-                return await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Delete Memo'),
-                        content: const Text(
-                          'Are you sure you want to delete this memo?',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(ctx).pop(false),
-                            child: const Text('Cancel'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.of(ctx).pop(true),
-                            child: const Text('Delete'),
-                          ),
-                        ],
-                      ),
-                    ) ??
-                    false;
-              },
-              onDismissed: (_) async {
-                await context.read<MemoStore>().deleteMemo(file.path);
-                if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('Memo deleted')));
-                }
-              },
+              confirmDismiss: (_) => _confirmDelete(),
+              onDismissed: (_) async => _deleteMemo(file.path),
               child: ListTile(
-                title: Text(preview),
-                subtitle: Text(baseName),
+                title: Text(baseName),
                 onTap: () => _openMemo(file.path),
+                trailing: PopupMenuButton<String>(
+                  onSelected: (value) async {
+                    if (value == 'rename') {
+                      await _renameMemo(
+                        path: file.path,
+                        currentBaseName: baseName,
+                      );
+                    } else if (value == 'delete') {
+                      final confirmed = await _confirmDelete();
+                      if (!confirmed) return;
+                      await _deleteMemo(file.path);
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'rename',
+                      child: Text('名前変更'),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text('削除'),
+                    ),
+                  ],
+                ),
               ),
             );
           },

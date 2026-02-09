@@ -523,52 +523,6 @@ class _MemoPageState extends State<MemoPage>
         : base;
   }
 
-  Future<void> _renameFile() async {
-    final TextEditingController nameCtrl = TextEditingController(
-      text: _fileName,
-    );
-    final result = await showDialog<String?>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Rename memo'),
-          content: TextField(
-            controller: nameCtrl,
-            autofocus: true,
-            decoration: const InputDecoration(hintText: 'Enter new file name'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, nameCtrl.text.trim()),
-              child: const Text('Rename'),
-            ),
-          ],
-        );
-      },
-    );
-    if (result == null || result.isEmpty) return;
-    final store = context.read<MemoStore>();
-    final newPath = await store.renameMemo(
-      _path,
-      '${result.replaceAll(RegExp(r'\.txt$'), '')}.txt',
-    );
-    if (newPath != null) {
-      setState(() {
-        _path = newPath;
-        _memoFile = File(newPath);
-      });
-    } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Rename failed')));
-    }
-  }
-
   void _enterSearchMode() {
     setState(() {
       _isSearchMode = true;
@@ -590,22 +544,23 @@ class _MemoPageState extends State<MemoPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: _tabController.index == 0
-            ? (_isSearchMode
-                  ? TextField(
-                      controller: _searchController,
-                      focusNode: _searchFocusNode,
-                      style: const TextStyle(fontSize: 16),
-                      decoration: const InputDecoration(
-                        hintText: 'Search in memo...',
-                        border: InputBorder.none,
-                      ),
-                    )
-                  : Text(_fileName, style: const TextStyle(fontSize: 16)))
-            : null,
+        title: _tabController.index == 0 && _isSearchMode
+            ? TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                style: const TextStyle(fontSize: 16),
+                decoration: const InputDecoration(
+                  hintText: 'Search in memo...',
+                  border: InputBorder.none,
+                ),
+              )
+            : Text(
+                _fileName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14),
+              ),
         actions: [
-          if (_tabController.index == 0 && !_isSearchMode)
-            IconButton(onPressed: _renameFile, icon: const Icon(Icons.edit)),
           if (_tabController.index == 0 && !_isSearchMode)
             const SizedBox(width: 48),
           if (_tabController.index == 0 && _isSearchMode)
@@ -683,11 +638,88 @@ class _MemoPageState extends State<MemoPage>
         ],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(icon: Icon(Icons.notes), text: 'All'),
-            Tab(icon: Icon(Icons.list), text: 'Line'),
-            Tab(icon: Icon(Icons.article), text: 'Paragraph'),
-            Tab(icon: Icon(Icons.dashboard_customize), text: 'Section'),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+          tabs: [
+            Tab(
+              icon: const Icon(Icons.notes),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'ALL',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  Text(
+                    '(${_controller.text.length})',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            Tab(
+              icon: const Icon(Icons.list),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'LINE',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  Text(
+                    '(${_lines.length})',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            Tab(
+              icon: const Icon(Icons.article),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'PARAGRAPH',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  Text(
+                    '(${_paragraphs.length})',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            Tab(
+              icon: const Icon(Icons.dashboard_customize),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'SECTION',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  Text(
+                    '(${_sections.length})',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
