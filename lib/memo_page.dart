@@ -233,7 +233,11 @@ class _MemoPageState extends State<MemoPage>
           ctrl.text = lineText;
         }
       }
-      _lineFocusNodes.putIfAbsent(i, FocusNode.new);
+      _lineFocusNodes.putIfAbsent(i, () {
+        final node = FocusNode();
+        node.addListener(() => _onLineFocusChanged(i));
+        return node;
+      });
       final index = i;
       _lineFocusNodes[index]!.onKeyEvent = (node, event) {
         if (event is KeyDownEvent &&
@@ -271,7 +275,11 @@ class _MemoPageState extends State<MemoPage>
         final ctrl = _paraCtrls[i]!;
         if (ctrl.text != text) ctrl.text = text;
       }
-      _paraFocusNodes.putIfAbsent(i, FocusNode.new);
+      _paraFocusNodes.putIfAbsent(i, () {
+        final node = FocusNode();
+        node.addListener(() => _onParagraphFocusChanged(i));
+        return node;
+      });
       final index = i;
       _paraFocusNodes[index]!.onKeyEvent = (node, event) {
         if (event is KeyDownEvent &&
@@ -310,7 +318,11 @@ class _MemoPageState extends State<MemoPage>
         final ctrl = _sectionCtrls[i]!;
         if (ctrl.text != text) ctrl.text = text;
       }
-      _sectionFocusNodes.putIfAbsent(i, FocusNode.new);
+      _sectionFocusNodes.putIfAbsent(i, () {
+        final node = FocusNode();
+        node.addListener(() => _onSectionFocusChanged(i));
+        return node;
+      });
       final index = i;
       _sectionFocusNodes[index]!.onKeyEvent = (node, event) {
         if (event is KeyDownEvent &&
@@ -352,6 +364,39 @@ class _MemoPageState extends State<MemoPage>
     _setWholeText(_sections.join('\n\n\n'));
   }
 
+  void _onLineFocusChanged(int index) {
+    final focus = _lineFocusNodes[index];
+    if (focus == null || !focus.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final latestFocus = _lineFocusNodes[index];
+      if (latestFocus == null || !latestFocus.hasFocus) return;
+      _lineCtrls[index]?.selection = const TextSelection.collapsed(offset: 0);
+    });
+  }
+
+  void _onParagraphFocusChanged(int index) {
+    final focus = _paraFocusNodes[index];
+    if (focus == null || !focus.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final latestFocus = _paraFocusNodes[index];
+      if (latestFocus == null || !latestFocus.hasFocus) return;
+      _paraCtrls[index]?.selection = const TextSelection.collapsed(offset: 0);
+    });
+  }
+
+  void _onSectionFocusChanged(int index) {
+    final focus = _sectionFocusNodes[index];
+    if (focus == null || !focus.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final latestFocus = _sectionFocusNodes[index];
+      if (latestFocus == null || !latestFocus.hasFocus) return;
+      _sectionCtrls[index]?.selection = const TextSelection.collapsed(offset: 0);
+    });
+  }
+
   void _setWholeText(String text) {
     debugPrint('setWholeText triggered len=${text.length}');
     final prevSelection = _controller.selection;
@@ -388,7 +433,17 @@ class _MemoPageState extends State<MemoPage>
   void _onLineChanged(int index) {
     if (_suppressItemListener) return;
     if (index >= _lines.length) return;
-    _lines[index] = _lineCtrls[index]!.text;
+    final updatedText = _lineCtrls[index]!.text;
+    if (updatedText.contains('\n')) {
+      final splitLines = updatedText.split('\n');
+      _lines
+        ..removeAt(index)
+        ..insertAll(index, splitLines);
+      _setWholeText(_lines.join('\n'));
+      _focusLineItemStart(index + 1);
+      return;
+    }
+    _lines[index] = updatedText;
     _setWholeText(_lines.join('\n'));
   }
 
