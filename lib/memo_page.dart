@@ -23,6 +23,7 @@ class _MemoPageState extends State<MemoPage>
   late final TextEditingController _controller;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  final FocusNode _editorFocusNode = FocusNode();
   final GlobalKey<VisualWhitespaceTextFieldState> _editorKey =
       GlobalKey<VisualWhitespaceTextFieldState>();
   late String _path;
@@ -57,6 +58,10 @@ class _MemoPageState extends State<MemoPage>
   bool _isSearchMode = false;
   final List<TextRange> _searchMatches = [];
   int _currentMatchIndex = -1;
+  int _lastFocusedTabIndex = 0;
+  int _lastFocusedLineIndex = 0;
+  int _lastFocusedParagraphIndex = 0;
+  int _lastFocusedSectionIndex = 0;
 
   @override
   void initState() {
@@ -66,6 +71,7 @@ class _MemoPageState extends State<MemoPage>
     _path = widget.filePath;
     _controller.addListener(_onTextChanged);
     _searchController.addListener(_onSearchChanged);
+    _editorFocusNode.addListener(_onEditorFocusChanged);
 
     // Initialize TabController and listener
     _tabController = TabController(length: 4, vsync: this);
@@ -100,9 +106,6 @@ class _MemoPageState extends State<MemoPage>
   }
 
   void _onTextChanged() {
-    debugPrint(
-      'onTextChanged tab=${_tabController.index} len=${_controller.text.length}',
-    );
     if (_suppressTextListener) return;
     final currentText = _controller.text;
     if (currentText == _lastText) return;
@@ -357,6 +360,15 @@ class _MemoPageState extends State<MemoPage>
     _setWholeText(_paragraphs.join('\n\n'));
   }
 
+  void _onEditorFocusChanged() {
+    if (!_editorFocusNode.hasFocus) return;
+    _lastFocusedTabIndex = 0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_editorFocusNode.hasFocus) return;
+      _controller.selection = const TextSelection.collapsed(offset: 0);
+    });
+  }
+
   void _onSectionChanged(int index) {
     if (_suppressItemListener) return;
     if (index >= _sections.length) return;
@@ -367,6 +379,8 @@ class _MemoPageState extends State<MemoPage>
   void _onLineFocusChanged(int index) {
     final focus = _lineFocusNodes[index];
     if (focus == null || !focus.hasFocus) return;
+    _lastFocusedTabIndex = 1;
+    _lastFocusedLineIndex = index;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final latestFocus = _lineFocusNodes[index];
@@ -378,6 +392,8 @@ class _MemoPageState extends State<MemoPage>
   void _onParagraphFocusChanged(int index) {
     final focus = _paraFocusNodes[index];
     if (focus == null || !focus.hasFocus) return;
+    _lastFocusedTabIndex = 2;
+    _lastFocusedParagraphIndex = index;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final latestFocus = _paraFocusNodes[index];
@@ -389,6 +405,8 @@ class _MemoPageState extends State<MemoPage>
   void _onSectionFocusChanged(int index) {
     final focus = _sectionFocusNodes[index];
     if (focus == null || !focus.hasFocus) return;
+    _lastFocusedTabIndex = 3;
+    _lastFocusedSectionIndex = index;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final latestFocus = _sectionFocusNodes[index];
@@ -398,7 +416,6 @@ class _MemoPageState extends State<MemoPage>
   }
 
   void _setWholeText(String text) {
-    debugPrint('setWholeText triggered len=${text.length}');
     final prevSelection = _controller.selection;
     final int prevOffset = prevSelection.baseOffset;
 
@@ -558,6 +575,8 @@ class _MemoPageState extends State<MemoPage>
     _controller.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _editorFocusNode.removeListener(_onEditorFocusChanged);
+    _editorFocusNode.dispose();
     for (final node in _lineFocusNodes.values) {
       node.dispose();
     }
@@ -593,6 +612,53 @@ class _MemoPageState extends State<MemoPage>
       _currentMatchIndex = -1;
     });
     _searchFocusNode.unfocus();
+  }
+
+  void _toggleKeyboardForCurrentTab() {
+    if (_isAnyEditableFocused()) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      setState(() {});
+      return;
+    }
+    _restoreLastFocusedEditable();
+  }
+
+  bool _isAnyEditableFocused() {
+    if (_editorFocusNode.hasFocus) return true;
+    if (_lineFocusNodes.values.any((node) => node.hasFocus)) return true;
+    if (_paraFocusNodes.values.any((node) => node.hasFocus)) return true;
+    if (_sectionFocusNodes.values.any((node) => node.hasFocus)) return true;
+    return false;
+  }
+
+  void _restoreLastFocusedEditable() {
+    switch (_tabController.index) {
+      case 0:
+        _editorFocusNode.requestFocus();
+        break;
+      case 1:
+        if (_lines.isEmpty) return;
+        final index = _lastFocusedTabIndex == 1
+            ? _lastFocusedLineIndex.clamp(0, _lines.length - 1)
+            : 0;
+        _focusLineItemStart(index);
+        break;
+      case 2:
+        if (_paragraphs.isEmpty) return;
+        final index = _lastFocusedTabIndex == 2
+            ? _lastFocusedParagraphIndex.clamp(0, _paragraphs.length - 1)
+            : 0;
+        _focusParagraphItemStart(index);
+        break;
+      case 3:
+        if (_sections.isEmpty) return;
+        final index = _lastFocusedTabIndex == 3
+            ? _lastFocusedSectionIndex.clamp(0, _sections.length - 1)
+            : 0;
+        _focusSectionItemStart(index);
+        break;
+    }
+    setState(() {});
   }
 
   @override
@@ -646,12 +712,24 @@ class _MemoPageState extends State<MemoPage>
                   ? null
                   : () => _selectMatch(_currentMatchIndex + 1),
             ),
+          if (_tabController.index == 0 && !_isSearchMode)
+            IconButton(
+              tooltip: 'Toggle keyboard',
+              onPressed: _toggleKeyboardForCurrentTab,
+              icon: const Icon(Icons.keyboard),
+            ),
           if (_tabController.index == 0)
             IconButton(
               onPressed: _isSearchMode ? _exitSearchMode : _enterSearchMode,
               icon: Icon(_isSearchMode ? Icons.close : Icons.search),
             ),
-          if (_tabController.index == 0) const SizedBox(width: 48),
+          if (_tabController.index == 0) const SizedBox(width: 16),
+          if (_tabController.index != 0)
+            IconButton(
+              tooltip: 'Toggle keyboard',
+              onPressed: _toggleKeyboardForCurrentTab,
+              icon: const Icon(Icons.keyboard),
+            ),
           if (_tabController.index != 0)
             IconButton(
               icon: Container(
@@ -790,6 +868,7 @@ class _MemoPageState extends State<MemoPage>
               child: VisualWhitespaceTextField(
                 key: _editorKey,
                 controller: _controller,
+                focusNode: _editorFocusNode,
                 highlightRanges: _searchMatches,
                 activeHighlightIndex: _currentMatchIndex,
                 highlightColor: const Color(0x80E5FF00),
