@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 import 'memo_store.dart';
 import 'visual_whitespace_textfield.dart';
 
-enum ItemMode { copy, delete, fold }
+enum ItemMode { copy, delete, fold, insert }
 
 class MemoPage extends StatefulWidget {
   final String filePath;
@@ -58,10 +58,7 @@ class _MemoPageState extends State<MemoPage>
   bool _isSearchMode = false;
   final List<TextRange> _searchMatches = [];
   int _currentMatchIndex = -1;
-  int _lastFocusedTabIndex = 0;
-  int _lastFocusedLineIndex = 0;
-  int _lastFocusedParagraphIndex = 0;
-  int _lastFocusedSectionIndex = 0;
+
 
   @override
   void initState() {
@@ -71,7 +68,6 @@ class _MemoPageState extends State<MemoPage>
     _path = widget.filePath;
     _controller.addListener(_onTextChanged);
     _searchController.addListener(_onSearchChanged);
-    _editorFocusNode.addListener(_onEditorFocusChanged);
 
     // Initialize TabController and listener
     _tabController = TabController(length: 4, vsync: this);
@@ -219,6 +215,8 @@ class _MemoPageState extends State<MemoPage>
         return 'Delete';
       case ItemMode.fold:
         return 'Fold';
+      case ItemMode.insert:
+        return 'Insert';
     }
   }
 
@@ -237,9 +235,7 @@ class _MemoPageState extends State<MemoPage>
         }
       }
       _lineFocusNodes.putIfAbsent(i, () {
-        final node = FocusNode();
-        node.addListener(() => _onLineFocusChanged(i));
-        return node;
+        return FocusNode();
       });
       final index = i;
       _lineFocusNodes[index]!.onKeyEvent = (node, event) {
@@ -279,9 +275,7 @@ class _MemoPageState extends State<MemoPage>
         if (ctrl.text != text) ctrl.text = text;
       }
       _paraFocusNodes.putIfAbsent(i, () {
-        final node = FocusNode();
-        node.addListener(() => _onParagraphFocusChanged(i));
-        return node;
+        return FocusNode();
       });
       final index = i;
       _paraFocusNodes[index]!.onKeyEvent = (node, event) {
@@ -322,9 +316,7 @@ class _MemoPageState extends State<MemoPage>
         if (ctrl.text != text) ctrl.text = text;
       }
       _sectionFocusNodes.putIfAbsent(i, () {
-        final node = FocusNode();
-        node.addListener(() => _onSectionFocusChanged(i));
-        return node;
+        return FocusNode();
       });
       final index = i;
       _sectionFocusNodes[index]!.onKeyEvent = (node, event) {
@@ -360,59 +352,11 @@ class _MemoPageState extends State<MemoPage>
     _setWholeText(_paragraphs.join('\n\n'));
   }
 
-  void _onEditorFocusChanged() {
-    if (!_editorFocusNode.hasFocus) return;
-    _lastFocusedTabIndex = 0;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_editorFocusNode.hasFocus) return;
-      _controller.selection = const TextSelection.collapsed(offset: 0);
-    });
-  }
-
   void _onSectionChanged(int index) {
     if (_suppressItemListener) return;
     if (index >= _sections.length) return;
     _sections[index] = _sectionCtrls[index]!.text;
     _setWholeText(_sections.join('\n\n\n'));
-  }
-
-  void _onLineFocusChanged(int index) {
-    final focus = _lineFocusNodes[index];
-    if (focus == null || !focus.hasFocus) return;
-    _lastFocusedTabIndex = 1;
-    _lastFocusedLineIndex = index;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final latestFocus = _lineFocusNodes[index];
-      if (latestFocus == null || !latestFocus.hasFocus) return;
-      _lineCtrls[index]?.selection = const TextSelection.collapsed(offset: 0);
-    });
-  }
-
-  void _onParagraphFocusChanged(int index) {
-    final focus = _paraFocusNodes[index];
-    if (focus == null || !focus.hasFocus) return;
-    _lastFocusedTabIndex = 2;
-    _lastFocusedParagraphIndex = index;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final latestFocus = _paraFocusNodes[index];
-      if (latestFocus == null || !latestFocus.hasFocus) return;
-      _paraCtrls[index]?.selection = const TextSelection.collapsed(offset: 0);
-    });
-  }
-
-  void _onSectionFocusChanged(int index) {
-    final focus = _sectionFocusNodes[index];
-    if (focus == null || !focus.hasFocus) return;
-    _lastFocusedTabIndex = 3;
-    _lastFocusedSectionIndex = index;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final latestFocus = _sectionFocusNodes[index];
-      if (latestFocus == null || !latestFocus.hasFocus) return;
-      _sectionCtrls[index]?.selection = const TextSelection.collapsed(offset: 0);
-    });
   }
 
   void _setWholeText(String text) {
@@ -575,7 +519,6 @@ class _MemoPageState extends State<MemoPage>
     _controller.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
-    _editorFocusNode.removeListener(_onEditorFocusChanged);
     _editorFocusNode.dispose();
     for (final node in _lineFocusNodes.values) {
       node.dispose();
@@ -612,53 +555,6 @@ class _MemoPageState extends State<MemoPage>
       _currentMatchIndex = -1;
     });
     _searchFocusNode.unfocus();
-  }
-
-  void _toggleKeyboardForCurrentTab() {
-    if (_isAnyEditableFocused()) {
-      FocusManager.instance.primaryFocus?.unfocus();
-      setState(() {});
-      return;
-    }
-    _restoreLastFocusedEditable();
-  }
-
-  bool _isAnyEditableFocused() {
-    if (_editorFocusNode.hasFocus) return true;
-    if (_lineFocusNodes.values.any((node) => node.hasFocus)) return true;
-    if (_paraFocusNodes.values.any((node) => node.hasFocus)) return true;
-    if (_sectionFocusNodes.values.any((node) => node.hasFocus)) return true;
-    return false;
-  }
-
-  void _restoreLastFocusedEditable() {
-    switch (_tabController.index) {
-      case 0:
-        _editorFocusNode.requestFocus();
-        break;
-      case 1:
-        if (_lines.isEmpty) return;
-        final index = _lastFocusedTabIndex == 1
-            ? _lastFocusedLineIndex.clamp(0, _lines.length - 1)
-            : 0;
-        _focusLineItemStart(index);
-        break;
-      case 2:
-        if (_paragraphs.isEmpty) return;
-        final index = _lastFocusedTabIndex == 2
-            ? _lastFocusedParagraphIndex.clamp(0, _paragraphs.length - 1)
-            : 0;
-        _focusParagraphItemStart(index);
-        break;
-      case 3:
-        if (_sections.isEmpty) return;
-        final index = _lastFocusedTabIndex == 3
-            ? _lastFocusedSectionIndex.clamp(0, _sections.length - 1)
-            : 0;
-        _focusSectionItemStart(index);
-        break;
-    }
-    setState(() {});
   }
 
   @override
@@ -712,24 +608,12 @@ class _MemoPageState extends State<MemoPage>
                   ? null
                   : () => _selectMatch(_currentMatchIndex + 1),
             ),
-          if (_tabController.index == 0 && !_isSearchMode)
-            IconButton(
-              tooltip: 'Toggle keyboard',
-              onPressed: _toggleKeyboardForCurrentTab,
-              icon: const Icon(Icons.keyboard),
-            ),
           if (_tabController.index == 0)
             IconButton(
               onPressed: _isSearchMode ? _exitSearchMode : _enterSearchMode,
               icon: Icon(_isSearchMode ? Icons.close : Icons.search),
             ),
           if (_tabController.index == 0) const SizedBox(width: 16),
-          if (_tabController.index != 0)
-            IconButton(
-              tooltip: 'Toggle keyboard',
-              onPressed: _toggleKeyboardForCurrentTab,
-              icon: const Icon(Icons.keyboard),
-            ),
           if (_tabController.index != 0)
             IconButton(
               icon: Container(
@@ -748,6 +632,8 @@ class _MemoPageState extends State<MemoPage>
                           ? Icons.content_copy
                           : _itemMode == ItemMode.delete
                           ? Icons.delete
+                          : _itemMode == ItemMode.insert
+                          ? Icons.keyboard
                           : Icons.unfold_less,
                       size: 16,
                     ),
@@ -976,6 +862,8 @@ class _MemoPageState extends State<MemoPage>
                               ? Icons.content_copy
                               : _itemMode == ItemMode.delete
                               ? Icons.delete
+                              : _itemMode == ItemMode.insert
+                              ? Icons.keyboard
                               : (folded
                                     ? Icons.unfold_more
                                     : Icons.unfold_less),
@@ -985,6 +873,8 @@ class _MemoPageState extends State<MemoPage>
                             ? 'Copy'
                             : _itemMode == ItemMode.delete
                             ? 'Delete'
+                            : _itemMode == ItemMode.insert
+                            ? 'Insert'
                             : (folded ? 'Expand' : 'Fold'),
                         onPressed: () {
                           switch (_itemMode) {
@@ -993,6 +883,14 @@ class _MemoPageState extends State<MemoPage>
                               break;
                             case ItemMode.delete:
                               _confirmDeleteLine(index);
+                              break;
+                            case ItemMode.insert:
+                              if (_lineFolded[index]) {
+                                setState(() {
+                                  _lineFolded[index] = false;
+                                });
+                              }
+                              _focusLineItemStart(index);
                               break;
                             case ItemMode.fold:
                               setState(() {
@@ -1099,6 +997,8 @@ class _MemoPageState extends State<MemoPage>
                               ? Icons.content_copy
                               : _itemMode == ItemMode.delete
                               ? Icons.delete
+                              : _itemMode == ItemMode.insert
+                              ? Icons.keyboard
                               : (folded
                                     ? Icons.unfold_more
                                     : Icons.unfold_less),
@@ -1108,6 +1008,8 @@ class _MemoPageState extends State<MemoPage>
                             ? 'Copy'
                             : _itemMode == ItemMode.delete
                             ? 'Delete'
+                            : _itemMode == ItemMode.insert
+                            ? 'Insert'
                             : (folded ? 'Expand' : 'Fold'),
                         onPressed: () {
                           switch (_itemMode) {
@@ -1116,6 +1018,14 @@ class _MemoPageState extends State<MemoPage>
                               break;
                             case ItemMode.delete:
                               _confirmDeleteParagraph(index);
+                              break;
+                            case ItemMode.insert:
+                              if (_paragraphFolded[index]) {
+                                setState(() {
+                                  _paragraphFolded[index] = false;
+                                });
+                              }
+                              _focusParagraphItemStart(index);
                               break;
                             case ItemMode.fold:
                               setState(() {
@@ -1223,6 +1133,8 @@ class _MemoPageState extends State<MemoPage>
                               ? Icons.content_copy
                               : _itemMode == ItemMode.delete
                               ? Icons.delete
+                              : _itemMode == ItemMode.insert
+                              ? Icons.keyboard
                               : (folded
                                     ? Icons.unfold_more
                                     : Icons.unfold_less),
@@ -1232,6 +1144,8 @@ class _MemoPageState extends State<MemoPage>
                             ? 'Copy'
                             : _itemMode == ItemMode.delete
                             ? 'Delete'
+                            : _itemMode == ItemMode.insert
+                            ? 'Insert'
                             : (folded ? 'Expand' : 'Fold'),
                         onPressed: () {
                           switch (_itemMode) {
@@ -1240,6 +1154,14 @@ class _MemoPageState extends State<MemoPage>
                               break;
                             case ItemMode.delete:
                               _confirmDeleteSection(index);
+                              break;
+                            case ItemMode.insert:
+                              if (_sectionFolded[index]) {
+                                setState(() {
+                                  _sectionFolded[index] = false;
+                                });
+                              }
+                              _focusSectionItemStart(index);
                               break;
                             case ItemMode.fold:
                               setState(() {
