@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 import 'memo_store.dart';
 import 'visual_whitespace_textfield.dart';
 
-enum ItemMode { copy, delete, fold, insert }
+enum ItemMode { insert, fold, copy, delete }
 
 class MemoPage extends StatefulWidget {
   final String filePath;
@@ -48,8 +48,10 @@ class _MemoPageState extends State<MemoPage>
   bool _suppressTextListener = false;
   // Flag to avoid reacting to controller edits during bulk sync
   bool _suppressItemListener = false;
-  // mode toggle: copy -> delete -> fold
-  ItemMode _itemMode = ItemMode.copy;
+  // mode toggle: insert -> fold -> copy -> delete
+  ItemMode _itemMode = ItemMode.insert;
+  // Swap UI setting
+  bool _swapHandles = false;
   // Per-item folded state
   List<bool> _lineFolded = [];
   List<bool> _paragraphFolded = [];
@@ -207,18 +209,7 @@ class _MemoPageState extends State<MemoPage>
     return newList;
   }
 
-  String _modeLabel(ItemMode mode) {
-    switch (mode) {
-      case ItemMode.copy:
-        return 'Copy';
-      case ItemMode.delete:
-        return 'Delete';
-      case ItemMode.fold:
-        return 'Fold';
-      case ItemMode.insert:
-        return 'Insert';
-    }
-  }
+
 
   void _syncLineControllers() {
     _suppressItemListener = true;
@@ -616,6 +607,16 @@ class _MemoPageState extends State<MemoPage>
           if (_tabController.index == 0) const SizedBox(width: 16),
           if (_tabController.index != 0)
             IconButton(
+              icon: const Icon(Icons.swap_horiz_outlined),
+              tooltip: 'Swap layout',
+              onPressed: () {
+                setState(() {
+                  _swapHandles = !_swapHandles;
+                });
+              },
+            ),
+          if (_tabController.index != 0)
+            IconButton(
               icon: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -646,12 +647,6 @@ class _MemoPageState extends State<MemoPage>
                   _itemMode = ItemMode
                       .values[(_itemMode.index + 1) % ItemMode.values.length];
                 });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Mode: ${_modeLabel(_itemMode)}'),
-                    duration: const Duration(milliseconds: 800),
-                  ),
-                );
               },
             ),
         ],
@@ -797,27 +792,72 @@ class _MemoPageState extends State<MemoPage>
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Number label + drag handle column (fixed width)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: ReorderableDragStartListener(
-                          index: index,
-                          child: SizedBox(
-                            width: 48,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '${index + 1}',
-                                  textAlign: TextAlign.right,
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                                const Icon(Icons.drag_handle_rounded, size: 24),
-                              ],
+                      if (_swapHandles)
+                        IconButton(
+                          icon: Icon(
+                            _itemMode == ItemMode.copy
+                                ? Icons.content_copy
+                                : _itemMode == ItemMode.delete
+                                ? Icons.delete
+                                : _itemMode == ItemMode.insert
+                                ? Icons.keyboard
+                                : (folded
+                                      ? Icons.unfold_more
+                                      : Icons.unfold_less),
+                          ),
+                          color: _itemMode == ItemMode.delete ? Colors.red : null,
+                          tooltip: _itemMode == ItemMode.copy
+                              ? 'Copy'
+                              : _itemMode == ItemMode.delete
+                              ? 'Delete'
+                              : _itemMode == ItemMode.insert
+                              ? 'Insert'
+                              : (folded ? 'Expand' : 'Fold'),
+                          onPressed: () {
+                            switch (_itemMode) {
+                              case ItemMode.copy:
+                                _copyLine(index);
+                                break;
+                              case ItemMode.delete:
+                                _confirmDeleteLine(index);
+                                break;
+                              case ItemMode.insert:
+                                if (_lineFolded[index]) {
+                                  setState(() {
+                                    _lineFolded[index] = false;
+                                  });
+                                }
+                                _focusLineItemStart(index);
+                                break;
+                              case ItemMode.fold:
+                                setState(() {
+                                  _lineFolded[index] = !_lineFolded[index];
+                                });
+                                break;
+                            }
+                          },
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: ReorderableDragStartListener(
+                            index: index,
+                            child: SizedBox(
+                              width: 48,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${index + 1}',
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  const Icon(Icons.drag_handle_rounded, size: 24),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
                       // Editable line field
                       Expanded(
                         child: folded
@@ -856,50 +896,72 @@ class _MemoPageState extends State<MemoPage>
                                 ),
                               ),
                       ),
-                      IconButton(
-                        icon: Icon(
-                          _itemMode == ItemMode.copy
-                              ? Icons.content_copy
+                      if (_swapHandles)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8.0),
+                          child: ReorderableDragStartListener(
+                            index: index,
+                            child: SizedBox(
+                              width: 48,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${index + 1}',
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  const Icon(Icons.drag_handle_rounded, size: 24),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        IconButton(
+                          icon: Icon(
+                            _itemMode == ItemMode.copy
+                                ? Icons.content_copy
+                                : _itemMode == ItemMode.delete
+                                ? Icons.delete
+                                : _itemMode == ItemMode.insert
+                                ? Icons.keyboard
+                                : (folded
+                                      ? Icons.unfold_more
+                                      : Icons.unfold_less),
+                          ),
+                          color: _itemMode == ItemMode.delete ? Colors.red : null,
+                          tooltip: _itemMode == ItemMode.copy
+                              ? 'Copy'
                               : _itemMode == ItemMode.delete
-                              ? Icons.delete
+                              ? 'Delete'
                               : _itemMode == ItemMode.insert
-                              ? Icons.keyboard
-                              : (folded
-                                    ? Icons.unfold_more
-                                    : Icons.unfold_less),
-                        ),
-                        color: _itemMode == ItemMode.delete ? Colors.red : null,
-                        tooltip: _itemMode == ItemMode.copy
-                            ? 'Copy'
-                            : _itemMode == ItemMode.delete
-                            ? 'Delete'
-                            : _itemMode == ItemMode.insert
-                            ? 'Insert'
-                            : (folded ? 'Expand' : 'Fold'),
-                        onPressed: () {
-                          switch (_itemMode) {
-                            case ItemMode.copy:
-                              _copyLine(index);
-                              break;
-                            case ItemMode.delete:
-                              _confirmDeleteLine(index);
-                              break;
-                            case ItemMode.insert:
-                              if (_lineFolded[index]) {
+                              ? 'Insert'
+                              : (folded ? 'Expand' : 'Fold'),
+                          onPressed: () {
+                            switch (_itemMode) {
+                              case ItemMode.copy:
+                                _copyLine(index);
+                                break;
+                              case ItemMode.delete:
+                                _confirmDeleteLine(index);
+                                break;
+                              case ItemMode.insert:
+                                if (_lineFolded[index]) {
+                                  setState(() {
+                                    _lineFolded[index] = false;
+                                  });
+                                }
+                                _focusLineItemStart(index);
+                                break;
+                              case ItemMode.fold:
                                 setState(() {
-                                  _lineFolded[index] = false;
+                                  _lineFolded[index] = !_lineFolded[index];
                                 });
-                              }
-                              _focusLineItemStart(index);
-                              break;
-                            case ItemMode.fold:
-                              setState(() {
-                                _lineFolded[index] = !_lineFolded[index];
-                              });
-                              break;
-                          }
-                        },
-                      ),
+                                break;
+                            }
+                          },
+                        ),
                     ],
                   ),
                 );
@@ -933,27 +995,73 @@ class _MemoPageState extends State<MemoPage>
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Number label + drag handle column (fixed width)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: ReorderableDragStartListener(
-                          index: index,
-                          child: SizedBox(
-                            width: 48,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '${index + 1}',
-                                  textAlign: TextAlign.right,
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                                const Icon(Icons.drag_handle_rounded, size: 24),
-                              ],
+                      if (_swapHandles)
+                        IconButton(
+                          icon: Icon(
+                            _itemMode == ItemMode.copy
+                                ? Icons.content_copy
+                                : _itemMode == ItemMode.delete
+                                ? Icons.delete
+                                : _itemMode == ItemMode.insert
+                                ? Icons.keyboard
+                                : (folded
+                                      ? Icons.unfold_more
+                                      : Icons.unfold_less),
+                          ),
+                          color: _itemMode == ItemMode.delete ? Colors.red : null,
+                          tooltip: _itemMode == ItemMode.copy
+                              ? 'Copy'
+                              : _itemMode == ItemMode.delete
+                              ? 'Delete'
+                              : _itemMode == ItemMode.insert
+                              ? 'Insert'
+                              : (folded ? 'Expand' : 'Fold'),
+                          onPressed: () {
+                            switch (_itemMode) {
+                              case ItemMode.copy:
+                                _copyParagraph(index);
+                                break;
+                              case ItemMode.delete:
+                                _confirmDeleteParagraph(index);
+                                break;
+                              case ItemMode.insert:
+                                if (_paragraphFolded[index]) {
+                                  setState(() {
+                                    _paragraphFolded[index] = false;
+                                  });
+                                }
+                                _focusParagraphItemStart(index);
+                                break;
+                              case ItemMode.fold:
+                                setState(() {
+                                  _paragraphFolded[index] =
+                                      !_paragraphFolded[index];
+                                });
+                                break;
+                            }
+                          },
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: ReorderableDragStartListener(
+                            index: index,
+                            child: SizedBox(
+                              width: 48,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${index + 1}',
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  const Icon(Icons.drag_handle_rounded, size: 24),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
                       Expanded(
                         child: folded
                             ? Container(
@@ -991,51 +1099,73 @@ class _MemoPageState extends State<MemoPage>
                                 ),
                               ),
                       ),
-                      IconButton(
-                        icon: Icon(
-                          _itemMode == ItemMode.copy
-                              ? Icons.content_copy
+                      if (_swapHandles)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8.0),
+                          child: ReorderableDragStartListener(
+                            index: index,
+                            child: SizedBox(
+                              width: 48,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${index + 1}',
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  const Icon(Icons.drag_handle_rounded, size: 24),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        IconButton(
+                          icon: Icon(
+                            _itemMode == ItemMode.copy
+                                ? Icons.content_copy
+                                : _itemMode == ItemMode.delete
+                                ? Icons.delete
+                                : _itemMode == ItemMode.insert
+                                ? Icons.keyboard
+                                : (folded
+                                      ? Icons.unfold_more
+                                      : Icons.unfold_less),
+                          ),
+                          color: _itemMode == ItemMode.delete ? Colors.red : null,
+                          tooltip: _itemMode == ItemMode.copy
+                              ? 'Copy'
                               : _itemMode == ItemMode.delete
-                              ? Icons.delete
+                              ? 'Delete'
                               : _itemMode == ItemMode.insert
-                              ? Icons.keyboard
-                              : (folded
-                                    ? Icons.unfold_more
-                                    : Icons.unfold_less),
-                        ),
-                        color: _itemMode == ItemMode.delete ? Colors.red : null,
-                        tooltip: _itemMode == ItemMode.copy
-                            ? 'Copy'
-                            : _itemMode == ItemMode.delete
-                            ? 'Delete'
-                            : _itemMode == ItemMode.insert
-                            ? 'Insert'
-                            : (folded ? 'Expand' : 'Fold'),
-                        onPressed: () {
-                          switch (_itemMode) {
-                            case ItemMode.copy:
-                              _copyParagraph(index);
-                              break;
-                            case ItemMode.delete:
-                              _confirmDeleteParagraph(index);
-                              break;
-                            case ItemMode.insert:
-                              if (_paragraphFolded[index]) {
+                              ? 'Insert'
+                              : (folded ? 'Expand' : 'Fold'),
+                          onPressed: () {
+                            switch (_itemMode) {
+                              case ItemMode.copy:
+                                _copyParagraph(index);
+                                break;
+                              case ItemMode.delete:
+                                _confirmDeleteParagraph(index);
+                                break;
+                              case ItemMode.insert:
+                                if (_paragraphFolded[index]) {
+                                  setState(() {
+                                    _paragraphFolded[index] = false;
+                                  });
+                                }
+                                _focusParagraphItemStart(index);
+                                break;
+                              case ItemMode.fold:
                                 setState(() {
-                                  _paragraphFolded[index] = false;
+                                  _paragraphFolded[index] =
+                                      !_paragraphFolded[index];
                                 });
-                              }
-                              _focusParagraphItemStart(index);
-                              break;
-                            case ItemMode.fold:
-                              setState(() {
-                                _paragraphFolded[index] =
-                                    !_paragraphFolded[index];
-                              });
-                              break;
-                          }
-                        },
-                      ),
+                                break;
+                            }
+                          },
+                        ),
                     ],
                   ),
                 );
@@ -1069,27 +1199,72 @@ class _MemoPageState extends State<MemoPage>
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Number label + drag handle column (fixed width)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: ReorderableDragStartListener(
-                          index: index,
-                          child: SizedBox(
-                            width: 48,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '${index + 1}',
-                                  textAlign: TextAlign.right,
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                                const Icon(Icons.drag_handle_rounded, size: 24),
-                              ],
+                      if (_swapHandles)
+                        IconButton(
+                          icon: Icon(
+                            _itemMode == ItemMode.copy
+                                ? Icons.content_copy
+                                : _itemMode == ItemMode.delete
+                                ? Icons.delete
+                                : _itemMode == ItemMode.insert
+                                ? Icons.keyboard
+                                : (folded
+                                      ? Icons.unfold_more
+                                      : Icons.unfold_less),
+                          ),
+                          color: _itemMode == ItemMode.delete ? Colors.red : null,
+                          tooltip: _itemMode == ItemMode.copy
+                              ? 'Copy'
+                              : _itemMode == ItemMode.delete
+                              ? 'Delete'
+                              : _itemMode == ItemMode.insert
+                              ? 'Insert'
+                              : (folded ? 'Expand' : 'Fold'),
+                          onPressed: () {
+                            switch (_itemMode) {
+                              case ItemMode.copy:
+                                _copySection(index);
+                                break;
+                              case ItemMode.delete:
+                                _confirmDeleteSection(index);
+                                break;
+                              case ItemMode.insert:
+                                if (_sectionFolded[index]) {
+                                  setState(() {
+                                    _sectionFolded[index] = false;
+                                  });
+                                }
+                                _focusSectionItemStart(index);
+                                break;
+                              case ItemMode.fold:
+                                setState(() {
+                                  _sectionFolded[index] = !_sectionFolded[index];
+                                });
+                                break;
+                            }
+                          },
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: ReorderableDragStartListener(
+                            index: index,
+                            child: SizedBox(
+                              width: 48,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${index + 1}',
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  const Icon(Icons.drag_handle_rounded, size: 24),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
                       Expanded(
                         child: folded
                             ? Container(
@@ -1127,50 +1302,72 @@ class _MemoPageState extends State<MemoPage>
                                 ),
                               ),
                       ),
-                      IconButton(
-                        icon: Icon(
-                          _itemMode == ItemMode.copy
-                              ? Icons.content_copy
+                      if (_swapHandles)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8.0),
+                          child: ReorderableDragStartListener(
+                            index: index,
+                            child: SizedBox(
+                              width: 48,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${index + 1}',
+                                    textAlign: TextAlign.right,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  const Icon(Icons.drag_handle_rounded, size: 24),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        IconButton(
+                          icon: Icon(
+                            _itemMode == ItemMode.copy
+                                ? Icons.content_copy
+                                : _itemMode == ItemMode.delete
+                                ? Icons.delete
+                                : _itemMode == ItemMode.insert
+                                ? Icons.keyboard
+                                : (folded
+                                      ? Icons.unfold_more
+                                      : Icons.unfold_less),
+                          ),
+                          color: _itemMode == ItemMode.delete ? Colors.red : null,
+                          tooltip: _itemMode == ItemMode.copy
+                              ? 'Copy'
                               : _itemMode == ItemMode.delete
-                              ? Icons.delete
+                              ? 'Delete'
                               : _itemMode == ItemMode.insert
-                              ? Icons.keyboard
-                              : (folded
-                                    ? Icons.unfold_more
-                                    : Icons.unfold_less),
-                        ),
-                        color: _itemMode == ItemMode.delete ? Colors.red : null,
-                        tooltip: _itemMode == ItemMode.copy
-                            ? 'Copy'
-                            : _itemMode == ItemMode.delete
-                            ? 'Delete'
-                            : _itemMode == ItemMode.insert
-                            ? 'Insert'
-                            : (folded ? 'Expand' : 'Fold'),
-                        onPressed: () {
-                          switch (_itemMode) {
-                            case ItemMode.copy:
-                              _copySection(index);
-                              break;
-                            case ItemMode.delete:
-                              _confirmDeleteSection(index);
-                              break;
-                            case ItemMode.insert:
-                              if (_sectionFolded[index]) {
+                              ? 'Insert'
+                              : (folded ? 'Expand' : 'Fold'),
+                          onPressed: () {
+                            switch (_itemMode) {
+                              case ItemMode.copy:
+                                _copySection(index);
+                                break;
+                              case ItemMode.delete:
+                                _confirmDeleteSection(index);
+                                break;
+                              case ItemMode.insert:
+                                if (_sectionFolded[index]) {
+                                  setState(() {
+                                    _sectionFolded[index] = false;
+                                  });
+                                }
+                                _focusSectionItemStart(index);
+                                break;
+                              case ItemMode.fold:
                                 setState(() {
-                                  _sectionFolded[index] = false;
+                                  _sectionFolded[index] = !_sectionFolded[index];
                                 });
-                              }
-                              _focusSectionItemStart(index);
-                              break;
-                            case ItemMode.fold:
-                              setState(() {
-                                _sectionFolded[index] = !_sectionFolded[index];
-                              });
-                              break;
-                          }
-                        },
-                      ),
+                                break;
+                            }
+                          },
+                        ),
                     ],
                   ),
                 );
